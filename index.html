@@ -131,7 +131,6 @@
       font-size: 12px;
       margin-right: 8px;
       margin-top: 8px;
-      margin-bottom: 12px;
     }
 
     .btnrow {
@@ -286,9 +285,9 @@
     .task:hover { stroke: rgba(255,255,255,0.65); stroke-width: 1.2; }
 
     .tooltip {
-      position: absolute;
+      position: fixed;
       pointer-events: none;
-      z-index: 20;
+      z-index: 9999;
       background: rgba(17,19,26,0.96);
       border: 1px solid #2e3441;
       border-radius: 12px;
@@ -305,7 +304,10 @@
 
     .tooltip strong { font-weight: 750; }
 
-    .heatcell {
+    
+    /* Overlap timeline tooltip uses HTML; avoid pre-wrap whitespace gaps */
+    #kwTip { white-space: normal; }
+.heatcell {
       stroke: #151824;
       stroke-width: 1;
       rx: 5;
@@ -474,6 +476,12 @@
       </div>
     </div>
 
+
+    <label>Keyword overlap window (days)</label>
+    <input id="overlapWindow" type="number" min="0" step="1" value="14" />
+    <div class="note">Used in the Keyword overlaps section below. Overlap is detected if two tasks share a keyword and their date ranges are within this window.</div>
+
+
     <div class="btnrow">
       <button id="apply" disabled>Apply filters</button>
       <button id="reset" class="secondary" disabled>Reset</button>
@@ -506,7 +514,6 @@
         <svg id="gantt" width="1400" height="620"></svg>
       </div>
       <div class="note">Tip: scroll horizontally for longer timelines. Hover tasks for details.</div>
-      <div class="tooltip" id="tooltip"></div>
     </div>
 
     <div class="card viz">
@@ -535,6 +542,30 @@
       </div>
       <div class="note">Weekly severity summed by location (top locations shown; remainder grouped as Other).</div>
 
+      <h2 style="margin-top:14px;">Keywords</h2>
+      <div class="svgwrap">
+        <svg id="themeBars" width="1400" height="320"></svg>
+      </div>
+      <div class="note">Top themes ranked by total severity (severity per day × task days). If a task has multiple themes, its severity contributes to each theme.</div>
+
+      <h2 style="margin-top:14px;">Theme trends (weekly)</h2>
+      <div class="svgwrap">
+        <svg id="themeTrends" width="1400" height="360"></svg>
+      </div>
+      <div class="note">Weekly severity curves for the busiest themes (top themes by total severity).</div>
+
+
+      <h2 style="margin-top:14px;">Keyword overlaps</h2>
+      <div class="toolbar" id="keywordMeta"></div>
+      <div id="keywordOverlapBody" class="stats-wrap"></div>
+      <div class="svgwrap" style="margin-top:10px;">
+        <svg id="keywordOverlapViz" width="1400" height="520"></svg>
+      </div>
+      <div class="note">Timeline view: each dot is an overlap cluster (same keyword across ≥2 programmes). Dot size indicates number of programmes; hover for details.</div>
+      <div class="note">Shows clusters where two or more programmes share the same keyword within the chosen time window.</div>
+
+
+
     </div>
 
     <div class="card viz">
@@ -545,6 +576,9 @@
     </div>
   </div>
 </div>
+
+<!-- Global tooltip (position: fixed) so it works across all charts -->
+<div class="tooltip" id="tooltip"></div>
 
 <script>
 (() => {
@@ -581,7 +615,9 @@ const COLMAP = {
   ],
   start: ["activity start", "date of activity start", "activity start date", "start date", "date start"],
   finish: ["activity end", "date of activity finish", "activity end date", "finish date", "end date", "date finish"],
-  location: ["location", "site", "room", "space", "campus"]
+  location: ["location", "site", "room", "space", "campus"],
+  themes: ["themes", "keywords", "key themes", "academic themes", "theme", "tags"],
+  keyword: ["keyword", "keywords", "key word", "tags", "tag"]
 };
 
   function findCol(headers, wantList) {
@@ -653,6 +689,24 @@ const COLMAP = {
     return 1;
   }
 
+
+  function parseThemes(v) {
+    const raw = String(v || "").trim();
+    if (!raw) return [];
+    // split on commas, semicolons, pipes, and new lines
+    const parts = raw.split(/[\n\r,;|]+/g).map(s => s.trim()).filter(Boolean);
+    // de-duplicate while preserving order
+    const seen = new Set();
+    const out = [];
+    for (const t of parts) {
+      const key = t.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(t);
+    }
+    return out;
+  }
+
   function likelihoodColour(lik) {
     if (lik === 1) return "rgba(122,162,255,0.70)";
     if (lik === 2) return "rgba(255,184,107,0.70)";
@@ -678,6 +732,7 @@ const COLMAP = {
   const elLikemax = document.getElementById("filterLikemax");
   const elFrom = document.getElementById("filterFrom");
   const elTo = document.getElementById("filterTo");
+  const elOverlapWindow = document.getElementById("overlapWindow");
 
   const kpiTasks = document.getElementById("kpiTasks");
   const kpiCourses = document.getElementById("kpiCourses");
@@ -744,6 +799,8 @@ const COLMAP = {
       const idxStart = findCol(headers, COLMAP.start);
       const idxFin = findCol(headers, COLMAP.finish);
       const idxLoc = findCol(headers, COLMAP.location);
+      const idxThemes = findCol(headers, COLMAP.themes);
+      const idxKeyword = findCol(headers, COLMAP.keyword);
 
       const required = [idxModule, idxYear, idxType, idxLike, idxStud, idxStart, idxFin];
       if (required.some(i => i < 0)) {
@@ -761,6 +818,8 @@ const COLMAP = {
         const likelihood = clampInt(row[idxLike], 1, 3);
         const studentsBucket = String(row[idxStud] || "").trim();
         const location = (idxLoc >= 0) ? String(row[idxLoc] || "").trim() : "";
+        const themes = (idxThemes >= 0) ? parseThemes(row[idxThemes]) : [];
+        const keywords = (idxKeyword >= 0) ? parseThemes(row[idxKeyword]) : themes;
         const startISO = excelDateToISO(row[idxStart]);
         const finishISO = excelDateToISO(row[idxFin]);
 
@@ -779,6 +838,8 @@ const COLMAP = {
             likelihood,
             studentsBucket,
             location,
+            themes,
+            keywords,
             startISO,
             finishISO
           });
@@ -806,6 +867,8 @@ const COLMAP = {
           likelihood,
           studentsBucket,
           location,
+          themes,
+          keywords,
           startISO: start.toISODate(),
           finishISO: end.toISODate(),
           severityPerDay: likelihood * studentWeight(studentsBucket),
@@ -891,6 +954,9 @@ const COLMAP = {
   drawHeatBlocks(filteredTasks);
   drawTotalCurve(filteredTasks);
   drawLocationCurves(filteredTasks);
+  drawThemeBars(filteredTasks);
+  drawThemeTrends(filteredTasks);
+  drawKeywordOverlaps(filteredTasks);
   renderCourseStats(filteredTasks);
 
     const startMin = d3.min(filteredTasks, d => d.startISO);
@@ -907,11 +973,19 @@ const COLMAP = {
     `;
   }
 
+  function placeTooltip(evt, maxW = 340, maxH = 220) {
+    const pad = 14;
+    const x = evt.clientX + pad;
+    const y = evt.clientY + pad;
+    tooltip.style.left = `${Math.min(x, window.innerWidth - maxW)}px`;
+    tooltip.style.top = `${Math.min(y, window.innerHeight - maxH)}px`;
+  }
+
   function showTooltip(evt, task) {
     const lines = [
       `${task.moduleName}`,
       `Course: ${task.course}`,
-      `Location: ${task.location || "—"}`,
+      `Location: ${task.location || "—"}`,      `Keywords: ${(task.keywords && task.keywords.length) ? task.keywords.join(", ") : "—"}`,
       `Year: ${task.yearGroup != null ? task.yearGroup : "—"}`,
       `Task type: ${task.type}`,
       `Dates: ${task.startISO} → ${task.finishISO}`,
@@ -924,12 +998,7 @@ const COLMAP = {
     tooltip.style.opacity = "1";
     tooltip.style.transform = "translateY(0px)";
 
-    const rect = evt.currentTarget.ownerSVGElement.getBoundingClientRect();
-    const x = evt.clientX - rect.left + 14;
-    const y = evt.clientY - rect.top + 14;
-
-    tooltip.style.left = `${Math.min(x, rect.width - 340)}px`;
-    tooltip.style.top = `${Math.min(y, rect.height - 160)}px`;
+    placeTooltip(evt);
   }
 
   function hideTooltip() {
@@ -1214,9 +1283,6 @@ function drawSeverityLines(tasks) {
     .attr("r", 3)
     .attr("fill", d => colour(d.course))
     .on("mousemove", function(evt, d) {
-      const rect = evt.currentTarget.ownerSVGElement.getBoundingClientRect();
-      const xPos = evt.clientX - rect.left + 14;
-      const yPos = evt.clientY - rect.top + 14;
       const dt = DateTime.fromISO(d.weekISO, { zone: "utc" });
 
       tooltip.innerHTML =
@@ -1226,8 +1292,7 @@ function drawSeverityLines(tasks) {
 
       tooltip.style.opacity = "1";
       tooltip.style.transform = "translateY(0px)";
-      tooltip.style.left = `${Math.min(xPos, rect.width - 340)}px`;
-      tooltip.style.top = `${Math.min(yPos, rect.height - 160)}px`;
+      placeTooltip(evt);
     })
     .on("mouseleave", hideTooltip);
 
@@ -1475,9 +1540,6 @@ function drawHeatBlocks(tasks) {
     .attr("height", y.bandwidth())
     .attr("fill", d => colour(d.value))
     .on("mousemove", function(evt, d) {
-      const rect = evt.currentTarget.ownerSVGElement.getBoundingClientRect();
-      const xPos = evt.clientX - rect.left + 14;
-      const yPos = evt.clientY - rect.top + 14;
       const dt = DateTime.fromISO(d.week, { zone: "utc" });
 
       tooltip.innerHTML =
@@ -1487,8 +1549,7 @@ function drawHeatBlocks(tasks) {
 
       tooltip.style.opacity = "1";
       tooltip.style.transform = "translateY(0px)";
-      tooltip.style.left = `${Math.min(xPos, rect.width - 340)}px`;
-      tooltip.style.top = `${Math.min(yPos, rect.height - 160)}px`;
+      placeTooltip(evt);
     })
     .on("mouseleave", hideTooltip);
 
@@ -1591,9 +1652,6 @@ function drawTotalCurve(tasks) {
     .attr("r", 3)
     .attr("fill", "rgba(122,162,255,0.95)")
     .on("mousemove", function(evt, d) {
-      const rect = evt.currentTarget.ownerSVGElement.getBoundingClientRect();
-      const xPos = evt.clientX - rect.left + 14;
-      const yPos = evt.clientY - rect.top + 14;
       const dt = DateTime.fromISO(d.weekISO, { zone: "utc" });
 
       tooltip.innerHTML =
@@ -1603,8 +1661,7 @@ function drawTotalCurve(tasks) {
 
       tooltip.style.opacity = "1";
       tooltip.style.transform = "translateY(0px)";
-      tooltip.style.left = `${Math.min(xPos, rect.width - 340)}px`;
-      tooltip.style.top = `${Math.min(yPos, rect.height - 160)}px`;
+      placeTooltip(evt);
     })
     .on("mouseleave", hideTooltip);
 
@@ -1756,9 +1813,6 @@ function drawLocationCurves(tasks) {
     .attr("r", 3)
     .attr("fill", d => colour(d.loc))
     .on("mousemove", function(evt, d) {
-      const rect = evt.currentTarget.ownerSVGElement.getBoundingClientRect();
-      const xPos = evt.clientX - rect.left + 14;
-      const yPos = evt.clientY - rect.top + 14;
       const dt = DateTime.fromISO(d.weekISO, { zone: "utc" });
 
       tooltip.innerHTML =
@@ -1768,8 +1822,7 @@ function drawLocationCurves(tasks) {
 
       tooltip.style.opacity = "1";
       tooltip.style.transform = "translateY(0px)";
-      tooltip.style.left = `${Math.min(xPos, rect.width - 340)}px`;
-      tooltip.style.top = `${Math.min(yPos, rect.height - 160)}px`;
+      placeTooltip(evt);
     })
     .on("mouseleave", hideTooltip);
 
@@ -1814,6 +1867,675 @@ function drawLocationCurves(tasks) {
     .attr("font-size", 12)
     .text("Weekly severity by location (top locations).");
 }
+
+function drawThemeBars(tasks) {
+  const svgTB = d3.select("#themeBars");
+  if (svgTB.empty()) return;
+
+  svgTB.selectAll("*").remove();
+
+  const width = 1400;
+  const height = 320;
+  svgTB.attr("width", width).attr("height", height);
+
+  if (!tasks || !tasks.length) return;
+
+  // Totals: sum(severityPerDay * taskDays) into each theme
+  const totals = new Map(); // theme -> total severity
+  for (const t of tasks) {
+    const themes = (t.themes && t.themes.length) ? t.themes : [];
+    if (!themes.length) continue;
+
+    const s = DateTime.fromISO(t.startISO, { zone: "utc" }).startOf("day");
+    const f = DateTime.fromISO(t.finishISO, { zone: "utc" }).startOf("day");
+    if (!s.isValid || !f.isValid) continue;
+
+    const days = Math.max(1, Math.floor(f.diff(s, "days").days) + 1);
+    const add = (t.severityPerDay || 0) * days;
+
+    for (const th of themes) {
+      totals.set(th, (totals.get(th) || 0) + add);
+    }
+  }
+
+  const rows = Array.from(totals.entries())
+    .map(([theme, value]) => ({ theme, value }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 18);
+
+  if (!rows.length) {
+    svgTB.append("text")
+      .attr("x", 16)
+      .attr("y", 28)
+      .attr("fill", "#aeb6c6")
+      .attr("font-size", 12)
+      .text("No keywords found (add a Keyword column).");
+    return;
+  }
+
+  const maxVal = d3.max(rows, d => d.value) || 1;
+
+  const margin = { top: 26, right: 20, bottom: 24, left: 240 };
+  const innerW = width - margin.left - margin.right;
+  const innerH = height - margin.top - margin.bottom;
+
+  const x = d3.scaleLinear().domain([0, maxVal]).nice().range([0, innerW]);
+  const y = d3.scaleBand().domain(rows.map(d => d.theme)).range([0, innerH]).padding(0.18);
+
+  const g = svgTB.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+
+  g.append("g")
+    .attr("class", "grid")
+    .call(d3.axisBottom(x).ticks(5).tickSize(innerH).tickFormat(() => ""))
+    .selectAll("line")
+    .attr("transform", `translate(0,${-innerH})`);
+
+  g.append("g")
+    .attr("class", "axis")
+    .call(d3.axisLeft(y).tickSize(0));
+
+  g.append("g")
+    .attr("class", "axis")
+    .attr("transform", `translate(0,${innerH})`)
+    .call(d3.axisBottom(x).ticks(5));
+
+  g.selectAll("rect")
+    .data(rows)
+    .enter()
+    .append("rect")
+    .attr("x", 0)
+    .attr("y", d => y(d.theme))
+    .attr("height", y.bandwidth())
+    .attr("width", d => Math.max(1, x(d.value)))
+    .attr("rx", 6)
+    .attr("ry", 6)
+    .attr("fill", "rgba(122,162,255,0.60)")
+    .attr("stroke", "rgba(0,0,0,0.35)")
+    .attr("stroke-width", 1)
+    .on("mousemove", function(evt, d) {
+      tooltip.innerHTML =
+        `<strong>${escapeHtml(d.theme)}</strong>\n` +
+        `Total severity (task-days weighted): ${d.value.toFixed(0)}`;
+
+      tooltip.style.opacity = "1";
+      tooltip.style.transform = "translateY(0px)";
+      placeTooltip(evt);
+    })
+    .on("mouseleave", hideTooltip);
+
+  svgTB.append("text")
+    .attr("x", margin.left)
+    .attr("y", 18)
+    .attr("fill", "#aeb6c6")
+    .attr("font-size", 12)
+    .text("Top themes (ranked by total severity).");
+}
+
+function drawThemeTrends(tasks) {
+  const svgTT = d3.select("#themeTrends");
+  if (svgTT.empty()) return;
+
+  svgTT.selectAll("*").remove();
+
+  const width = 1400;
+  const height = 360;
+  svgTT.attr("width", width).attr("height", height);
+
+  if (!tasks || !tasks.length) return;
+
+  // Determine top themes by total severity first
+  const totals = new Map();
+  for (const t of tasks) {
+    const themes = (t.themes && t.themes.length) ? t.themes : [];
+    if (!themes.length) continue;
+
+    const s = DateTime.fromISO(t.startISO, { zone: "utc" }).startOf("day");
+    const f = DateTime.fromISO(t.finishISO, { zone: "utc" }).startOf("day");
+    if (!s.isValid || !f.isValid) continue;
+
+    const days = Math.max(1, Math.floor(f.diff(s, "days").days) + 1);
+    const add = (t.severityPerDay || 0) * days;
+
+    for (const th of themes) totals.set(th, (totals.get(th) || 0) + add);
+  }
+
+  const ranked = Array.from(totals.entries()).sort((a, b) => b[1] - a[1]);
+  const topN = 8;
+  const themesTop = ranked.slice(0, topN).map(d => d[0]);
+  if (!themesTop.length) {
+    svgTT.append("text")
+      .attr("x", 16)
+      .attr("y", 28)
+      .attr("fill", "#aeb6c6")
+      .attr("font-size", 12)
+      .text("No keywords found (add a Keyword column).");
+    return;
+  }
+
+  const minISO = d3.min(tasks, d => d.startISO);
+  const maxISO = d3.max(tasks, d => d.finishISO);
+
+  const minDT = startOfISOWeek(DateTime.fromISO(minISO, { zone: "utc" }));
+  const maxDT = startOfISOWeek(DateTime.fromISO(maxISO, { zone: "utc" }));
+
+  const weeks = [];
+  for (let d = minDT; d <= maxDT; d = d.plus({ weeks: 1 })) weeks.push(d.toISODate());
+
+  const wkTotals = new Map(); // `${theme}||${week}` -> value
+
+  for (const t of tasks) {
+    const themes = (t.themes && t.themes.length) ? t.themes : [];
+    if (!themes.length) continue;
+
+    // only accumulate for top themes to keep chart readable
+    const used = themes.filter(th => themesTop.includes(th));
+    if (!used.length) continue;
+
+    const s = DateTime.fromISO(t.startISO, { zone: "utc" }).startOf("day");
+    const f = DateTime.fromISO(t.finishISO, { zone: "utc" }).startOf("day");
+    if (!s.isValid || !f.isValid) continue;
+
+    for (let d = s; d <= f; d = d.plus({ days: 1 })) {
+      const w = startOfISOWeek(d).toISODate();
+      const add = (t.severityPerDay || 0);
+      for (const th of used) {
+        const k = `${th}||${w}`;
+        wkTotals.set(k, (wkTotals.get(k) || 0) + add);
+      }
+    }
+  }
+
+  const series = themesTop.map(th => ({
+    theme: th,
+    values: weeks.map(w => ({
+      weekISO: w,
+      date: DateTime.fromISO(w, { zone: "utc" }).toJSDate(),
+      value: wkTotals.get(`${th}||${w}`) || 0
+    }))
+  }));
+
+  const maxVal = d3.max(series, s => d3.max(s.values, v => v.value)) || 1;
+
+  const margin = { top: 30, right: 220, bottom: 40, left: 60 };
+  const innerW = width - margin.left - margin.right;
+  const innerH = height - margin.top - margin.bottom;
+
+  const x = d3.scaleTime()
+    .domain([DateTime.fromISO(weeks[0], { zone: "utc" }).toJSDate(),
+             DateTime.fromISO(weeks[weeks.length - 1], { zone: "utc" }).plus({ weeks: 1 }).toJSDate()])
+    .range([0, innerW]);
+
+  const y = d3.scaleLinear().domain([0, maxVal]).nice().range([innerH, 0]);
+
+  const g = svgTT.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+
+  g.append("g")
+    .attr("class", "grid")
+    .call(d3.axisLeft(y).ticks(5).tickSize(-innerW).tickFormat(() => ""));
+
+  g.append("g")
+    .attr("class", "axis")
+    .attr("transform", `translate(0,${innerH})`)
+    .call(d3.axisBottom(x).ticks(d3.timeWeek.every(2)).tickFormat(d3.timeFormat("%d %b")));
+
+  g.append("g")
+    .attr("class", "axis")
+    .call(d3.axisLeft(y).ticks(5));
+
+  const line = d3.line()
+    .x(d => x(d.date))
+    .y(d => y(d.value))
+    .curve(d3.curveMonotoneX);
+
+  const colour = d3.scaleOrdinal()
+    .domain(themesTop)
+    .range(d3.schemeTableau10.concat(d3.schemeSet3).slice(0, Math.max(10, themesTop.length)));
+
+  const linesG = g.append("g");
+
+  linesG.selectAll("path")
+    .data(series)
+    .enter()
+    .append("path")
+    .attr("fill", "none")
+    .attr("stroke-width", 2)
+    .attr("stroke", d => colour(d.theme))
+    .attr("d", d => line(d.values));
+
+  const points = linesG.selectAll("g.points")
+    .data(series)
+    .enter()
+    .append("g")
+    .attr("class", "points");
+
+  points.selectAll("circle")
+    .data(d => d.values.map(v => ({ ...v, theme: d.theme })))
+    .enter()
+    .append("circle")
+    .attr("cx", d => x(d.date))
+    .attr("cy", d => y(d.value))
+    .attr("r", 3)
+    .attr("fill", d => colour(d.theme))
+    .on("mousemove", function(evt, d) {
+      const dt = DateTime.fromISO(d.weekISO, { zone: "utc" });
+
+      tooltip.innerHTML =
+        `<strong>${escapeHtml(d.theme)}</strong>\n` +
+        `Week commencing: ${dt.toFormat("dd LLL yyyy")}\n` +
+        `Weekly severity: ${d.value.toFixed(0)}`;
+
+      tooltip.style.opacity = "1";
+      tooltip.style.transform = "translateY(0px)";
+      placeTooltip(evt);
+    })
+    .on("mouseleave", hideTooltip);
+
+  const legend = svgTT.append("g")
+    .attr("transform", `translate(${margin.left + innerW + 14},${margin.top})`);
+
+  legend.append("text")
+    .attr("x", 0)
+    .attr("y", 0)
+    .attr("fill", "#aeb6c6")
+    .attr("font-size", 12)
+    .text("Keywords");
+
+  const legendItems = legend.selectAll("g.item")
+    .data(themesTop)
+    .enter()
+    .append("g")
+    .attr("class", "item")
+    .attr("transform", (d, i) => `translate(0,${16 + i * 16})`);
+
+  legendItems.append("rect")
+    .attr("x", 0)
+    .attr("y", -10)
+    .attr("width", 10)
+    .attr("height", 10)
+    .attr("rx", 3)
+    .attr("ry", 3)
+    .attr("fill", d => colour(d));
+
+  legendItems.append("text")
+    .attr("x", 16)
+    .attr("y", -2)
+    .attr("fill", "#aeb6c6")
+    .attr("font-size", 11)
+    .text(d => d);
+
+  svgTT.append("text")
+    .attr("x", margin.left)
+    .attr("y", 18)
+    .attr("fill", "#aeb6c6")
+    .attr("font-size", 12)
+    .text("Weekly severity by theme (top themes).");
+}
+
+
+function drawKeywordOverlaps(tasks) {
+  const el = document.getElementById("keywordOverlapBody");
+  const meta = document.getElementById("keywordMeta");
+  if (!el) return;
+
+  const windowDays = Math.max(0, Math.round(Number(elOverlapWindow && elOverlapWindow.value ? elOverlapWindow.value : 14)));
+
+  if (!tasks || tasks.length === 0) {
+    el.innerHTML = `<div class="note">No tasks to analyse (check filters).</div>`;
+    drawKeywordOverlapTimeline([], windowDays);
+    if (meta) meta.innerHTML = "";
+    return;
+  }
+
+  // Build keyword -> tasks map
+  const byKeyword = new Map();
+  for (const t of tasks) {
+    const kws = (t.keywords && t.keywords.length) ? t.keywords : [];
+    if (!kws.length) continue;
+    for (const kw of kws) {
+      const k = String(kw || "").trim();
+      if (!k) continue;
+      if (!byKeyword.has(k)) byKeyword.set(k, []);
+      byKeyword.get(k).push(t);
+    }
+  }
+
+  // Build clusters per keyword by scanning sorted tasks (efficient, no O(n^2))
+  const clusters = [];
+
+  for (const [kw, list] of byKeyword.entries()) {
+    const items = list
+      .filter(t => t.startISO && t.finishISO)
+      .slice()
+      .sort((a, b) => a.startISO.localeCompare(b.startISO));
+
+    if (items.length < 2) continue;
+
+    // cluster while expanded ranges overlap
+    let cur = null;
+
+    for (const t of items) {
+      const tS = DateTime.fromISO(t.startISO, { zone: "utc" }).startOf("day");
+      const tF = DateTime.fromISO(t.finishISO, { zone: "utc" }).startOf("day");
+      if (!tS.isValid || !tF.isValid) continue;
+
+      const tSx = tS.minus({ days: windowDays });
+      const tFx = tF.plus({ days: windowDays });
+
+      if (!cur) {
+        cur = {
+          keyword: kw,
+          minStart: tS,
+          maxFinish: tF,
+          maxFinishExpanded: tFx,
+          tasks: [t]
+        };
+        continue;
+      }
+
+      // If this task overlaps the current cluster expanded span, merge; otherwise flush and start new
+      if (tSx <= cur.maxFinishExpanded) {
+        cur.tasks.push(t);
+        if (tS < cur.minStart) cur.minStart = tS;
+        if (tF > cur.maxFinish) cur.maxFinish = tF;
+        if (tFx > cur.maxFinishExpanded) cur.maxFinishExpanded = tFx;
+      } else {
+        clusters.push(cur);
+        cur = {
+          keyword: kw,
+          minStart: tS,
+          maxFinish: tF,
+          maxFinishExpanded: tFx,
+          tasks: [t]
+        };
+      }
+    }
+    if (cur) clusters.push(cur);
+  }
+
+  // Summarise clusters and keep only overlaps across programmes (2+ distinct courses)
+  const rows = clusters.map(c => {
+    const programmes = Array.from(new Set(c.tasks.map(t => t.course || "—")));
+    const modules = Array.from(new Set(c.tasks.map(t => t.moduleName).filter(Boolean)));
+
+    // Keep per-task detail for richer hover tooltips in the overlap timeline.
+    // Each entry corresponds to one task contributing to this cluster.
+    const items = c.tasks.map(t => {
+      const programme = t.course || "—";
+      const date = `${t.startISO || "—"} → ${t.finishISO || "—"}`;
+      const task = [t.moduleName, t.type].filter(Boolean).join(" · ") || "—";
+      return { programme, date, task, keyword: c.keyword };
+    }).sort((a, b) =>
+      a.programme.localeCompare(b.programme, "en-GB", { numeric: true }) ||
+      a.date.localeCompare(b.date, "en-GB", { numeric: true }) ||
+      a.task.localeCompare(b.task, "en-GB", { numeric: true })
+    );
+    return {
+      keyword: c.keyword,
+      programmes,
+      programmeCount: programmes.length,
+      taskCount: c.tasks.length,
+      dateFrom: c.minStart.toISODate(),
+      dateTo: c.maxFinish.toISODate(),
+      modules: modules.slice(0, 10), // keep table compact
+      items,
+      severity: c.tasks.reduce((acc, t) => {
+        const s = DateTime.fromISO(t.startISO, { zone: "utc" }).startOf("day");
+        const f = DateTime.fromISO(t.finishISO, { zone: "utc" }).startOf("day");
+        const days = (s.isValid && f.isValid) ? (Math.max(1, Math.floor(f.diff(s, "days").days) + 1)) : 1;
+        return acc + (t.severityPerDay || 0) * days;
+      }, 0)
+    };
+  }).filter(r => r.programmeCount >= 2);
+
+  rows.sort((a, b) => (b.programmeCount - a.programmeCount) || (b.taskCount - a.taskCount) || (b.severity - a.severity) || a.keyword.localeCompare(b.keyword, "en-GB"));
+
+  const keywordsWithOverlaps = new Set(rows.map(r => r.keyword));
+
+  if (meta) {
+    meta.innerHTML = `
+      <span class="pill"><strong>${rows.length}</strong> overlap clusters</span>
+      <span class="pill"><strong>${keywordsWithOverlaps.size}</strong> keywords involved</span>
+      <span class="pill">window: ±${windowDays} days</span>
+    `;
+  }
+
+  if (!rows.length) {
+    el.innerHTML = `<div class="note">No cross-programme keyword overlaps found (try widening the window, or check the keyword column).</div>`;
+    drawKeywordOverlapTimeline([], windowDays);
+    return;
+  }
+
+  const top = rows.slice(0, 30);
+
+  el.innerHTML = `
+    <table class="stats-table">
+      <thead>
+        <tr>
+          <th>Keyword</th>
+          <th class="num">Programmes</th>
+          <th class="num">Tasks</th>
+          <th>Date span</th>
+          <th>Programmes involved</th>
+          <th>Example modules</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${top.map(r => `
+          <tr>
+            <td>${escapeHtml(r.keyword)}</td>
+            <td class="num">${r.programmeCount}</td>
+            <td class="num">${r.taskCount}</td>
+            <td style="color:#aeb6c6;">${escapeHtml(r.dateFrom)} → ${escapeHtml(r.dateTo)}</td>
+            <td>${escapeHtml(r.programmes.slice(0, 6).join(", "))}${r.programmes.length > 6 ? "…" : ""}</td>
+            <td style="color:#aeb6c6;">${escapeHtml(r.modules.join(", "))}${r.modules.length >= 10 ? "…" : ""}</td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+    <div class="note">Showing the top ${top.length} clusters. Increase or decrease the window to change what counts as overlapping.</div>
+  `;
+
+function drawKeywordOverlapTimeline(rows, windowDays) {
+  const svgEl = document.getElementById("keywordOverlapViz");
+  if (!svgEl) return;
+
+  // Clear
+  while (svgEl.firstChild) svgEl.removeChild(svgEl.firstChild);
+
+  if (!rows || !rows.length) {
+    const svg = d3.select(svgEl);
+    svg.append("text")
+      .attr("x", 18)
+      .attr("y", 26)
+      .attr("fill", "#aeb6c6")
+      .attr("font-size", 12)
+      .text("No overlap clusters to plot.");
+    return;
+  }
+
+  // Keep the chart readable: plot up to the busiest 25 keywords (by cluster count, then severity).
+  const byKw = d3.rollups(
+    rows,
+    v => ({
+      n: v.length,
+      severity: d3.sum(v, d => d.severity || 0),
+      programmesMax: d3.max(v, d => d.programmeCount || 0)
+    }),
+    d => d.keyword
+  ).sort((a, b) => (b[1].n - a[1].n) || (b[1].severity - a[1].severity) || String(a[0]).localeCompare(String(b[0]), "en-GB"));
+
+  const keepKeywords = new Set(byKw.slice(0, 25).map(d => d[0]));
+  const data = rows.filter(r => keepKeywords.has(r.keyword)).map(r => {
+    const s = DateTime.fromISO(r.dateFrom, { zone: "utc" });
+    const f = DateTime.fromISO(r.dateTo, { zone: "utc" });
+    const mid = s.isValid && f.isValid ? s.plus({ days: Math.max(0, Math.floor(f.diff(s, "days").days) / 2) }) : s;
+    return { ...r, midISO: mid.isValid ? mid.toISODate() : r.dateFrom, midDT: mid.isValid ? mid.toJSDate() : new Date(r.dateFrom) };
+  });
+
+  const keywords = Array.from(new Set(data.map(d => d.keyword)))
+    .sort((a, b) => a.localeCompare(b, "en-GB", { numeric: true }));
+
+  // Dynamic height (scroll container already exists)
+  const rowH = 18;
+  const hWanted = Math.max(220, (keywords.length * rowH) + 70);
+  svgEl.setAttribute("height", String(hWanted));
+
+  const W = Number(svgEl.getAttribute("width") || 1400);
+  const H = Number(svgEl.getAttribute("height") || 520);
+
+  const margin = { top: 28, right: 24, bottom: 34, left: 220 };
+  const innerW = W - margin.left - margin.right;
+  const innerH = H - margin.top - margin.bottom;
+
+  const svg = d3.select(svgEl);
+
+  const minDate = d3.min(data, d => d.midDT);
+  const maxDate = d3.max(data, d => d.midDT);
+
+  const x = d3.scaleTime()
+    .domain([minDate, maxDate])
+    .range([0, innerW])
+    .nice();
+
+  const y = d3.scaleBand()
+    .domain(keywords)
+    .range([0, innerH])
+    .paddingInner(0.2);
+
+  // Subtle grid lines for y rows
+  const g = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+
+  g.selectAll("line.row")
+    .data(keywords)
+    .enter()
+    .append("line")
+    .attr("class", "row")
+    .attr("x1", 0)
+    .attr("x2", innerW)
+    .attr("y1", d => y(d) + y.bandwidth() / 2)
+    .attr("y2", d => y(d) + y.bandwidth() / 2)
+    .attr("stroke", "#232a36")
+    .attr("stroke-width", 1);
+
+  const xAxis = d3.axisBottom(x).ticks(Math.min(10, Math.max(4, Math.floor(innerW / 140)))).tickSizeOuter(0);
+  g.append("g")
+    .attr("transform", `translate(0,${innerH})`)
+    .call(xAxis)
+    .call(g => g.selectAll("text").attr("fill", "#aeb6c6").attr("font-size", 11))
+    .call(g => g.selectAll("path,line").attr("stroke", "#2b3444"));
+
+  const yAxis = d3.axisLeft(y).tickSize(0);
+  g.append("g")
+    .call(yAxis)
+    .call(g => g.selectAll("text").attr("fill", "#aeb6c6").attr("font-size", 11))
+    .call(g => g.selectAll("path,line").attr("stroke", "none"));
+
+  // Size scale: programmes involved
+  const r = d3.scaleSqrt()
+    .domain([2, d3.max(data, d => d.programmeCount || 2) || 2])
+    .range([3, 12]);
+
+  // Colour scale: programmeCount (so bigger overlaps pop)
+  const c = d3.scaleSequential()
+    .domain([2, d3.max(data, d => d.programmeCount || 2) || 2])
+    .interpolator(d3.interpolateTurbo);
+
+  // Tooltip
+  const existing = document.getElementById("kwTip");
+  const tip = existing ? d3.select(existing) : d3.select(document.body)
+    .append("div")
+    .attr("id","kwTip")
+    .attr("class", "tooltip")
+    .style("position", "fixed")
+    .style("max-width", "560px")
+    .style("pointer-events", "none")
+    .style("opacity", 0)
+    .style("white-space", "normal")
+    .style("white-space", "normal");
+
+  function tipHtml(d) {
+    const progs = (d.programmes || []).join(", ");
+    const mods = (d.modules || []).join(", ");
+    const items = Array.isArray(d.items) ? d.items : [];
+
+    const rows = items.map(it => {
+      return `
+        <tr>
+          <td style="padding:2px 6px;line-height:1.25;vertical-align:top;white-space:nowrap;">${escapeHtml(it.programme)}</td>
+          <td style="padding:2px 6px;line-height:1.25;vertical-align:top;white-space:nowrap;color:#cbd5e1;">${escapeHtml(it.date)}</td>
+          <td style="padding:2px 6px;line-height:1.25;vertical-align:top;color:#cbd5e1;">${escapeHtml(it.task)}</td>
+          <td style="padding:2px 6px;line-height:1.25;vertical-align:top;color:#aeb6c6;">${escapeHtml(it.keyword || d.keyword || "")}</td>
+        </tr>
+      `;
+    }).join("");
+
+    const taskTable = items.length ? `
+      <div style="margin-top:4px;font-size:12px;line-height:1.25;color:#aeb6c6;">Tasks in this overlap cluster</div>
+      <div style="margin-top:3px;max-height:220px;overflow:auto;border:1px solid rgba(255,255,255,0.10);border-radius:10px;">
+        <table style="width:100%;border-collapse:collapse;font-size:12px;">
+          <thead>
+            <tr style="position:sticky;top:0;background:rgba(10,11,17,0.92);backdrop-filter: blur(6px);">
+              <th style="text-align:left;padding:5px 6px;color:#f2f2f2;font-weight:650;border-bottom:1px solid rgba(255,255,255,0.10);">Programme</th>
+              <th style="text-align:left;padding:5px 6px;color:#f2f2f2;font-weight:650;border-bottom:1px solid rgba(255,255,255,0.10);">Date</th>
+              <th style="text-align:left;padding:5px 6px;color:#f2f2f2;font-weight:650;border-bottom:1px solid rgba(255,255,255,0.10);">Task</th>
+              <th style="text-align:left;padding:5px 6px;color:#f2f2f2;font-weight:650;border-bottom:1px solid rgba(255,255,255,0.10);">Keyword</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows}
+          </tbody>
+        </table>
+      </div>
+    ` : ``;
+
+    return `
+      <div style="font-weight:700;margin-bottom:4px;">${escapeHtml(d.keyword)}</div>
+      <div style="color:#cbd5e1;font-size:12px;">${escapeHtml(d.dateFrom)} → ${escapeHtml(d.dateTo)}</div>
+      <div style="margin-top:2px;font-size:12px;line-height:1.25;"><strong>${d.programmeCount}</strong> programmes, <strong>${d.taskCount}</strong> tasks</div>
+      <div style="margin-top:2px;font-size:12px;line-height:1.25;color:#aeb6c6;"><strong>Programmes:</strong> ${escapeHtml(progs)}</div>
+      ${mods ? `<div style="margin-top:4px;font-size:12px;color:#aeb6c6;"><strong>Modules:</strong> ${escapeHtml(mods)}</div>` : ``}
+      ${taskTable}
+      <div style="margin-top:2px;font-size:12px;line-height:1.25;color:#aeb6c6;">window: ±${windowDays} days</div>
+    `;
+  }
+
+  const dots = g.append("g").selectAll("circle.dot")
+    .data(data)
+    .enter()
+    .append("circle")
+    .attr("class", "dot")
+    .attr("cx", d => x(d.midDT))
+    .attr("cy", d => y(d.keyword) + y.bandwidth() / 2)
+    .attr("r", d => r(d.programmeCount || 2))
+    .attr("fill", d => c(d.programmeCount || 2))
+    .attr("opacity", 0.9)
+    .attr("stroke", "#0b0f15")
+    .attr("stroke-width", 1);
+
+  dots
+    .on("mousemove", (ev, d) => {
+      tip.html(tipHtml(d))
+        .style("opacity", 1)
+        .style("left", `${Math.min(ev.clientX + 14, window.innerWidth - 360)}px`)
+        .style("top", `${Math.min(ev.clientY + 14, window.innerHeight - 220)}px`);
+    })
+    .on("mouseleave", () => tip.style("opacity", 0));
+
+  // Title
+  svg.append("text")
+    .attr("x", margin.left)
+    .attr("y", 18)
+    .attr("fill", "#aeb6c6")
+    .attr("font-size", 12)
+    .text("Overlap timeline (top 25 keywords by overlap activity).");
+}
+
+
+  drawKeywordOverlapTimeline(rows, windowDays);
+}
+
+
+
 
 
 // --- export helpers (SVG to PNG) ---
