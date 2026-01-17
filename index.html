@@ -2263,7 +2263,8 @@ function drawKeywordOverlaps(tasks) {
       const programme = t.course || "—";
       const date = `${t.startISO || "—"} → ${t.finishISO || "—"}`;
       const task = [t.moduleName, t.type].filter(Boolean).join(" · ") || "—";
-      return { programme, date, task, keyword: c.keyword };
+      const students = (t.studentsBucket != null && String(t.studentsBucket).trim()) ? String(t.studentsBucket).trim() : "—";
+      return { programme, date, task, students, keyword: c.keyword };
     }).sort((a, b) =>
       a.programme.localeCompare(b.programme, "en-GB", { numeric: true }) ||
       a.date.localeCompare(b.date, "en-GB", { numeric: true }) ||
@@ -2463,6 +2464,7 @@ function drawKeywordOverlapTimeline(rows, windowDays) {
         <tr>
           <td style="padding:2px 6px;line-height:1.25;vertical-align:top;white-space:nowrap;">${escapeHtml(it.programme)}</td>
           <td style="padding:2px 6px;line-height:1.25;vertical-align:top;white-space:nowrap;color:#cbd5e1;">${escapeHtml(it.date)}</td>
+          <td style="padding:2px 6px;line-height:1.25;vertical-align:top;white-space:nowrap;color:#cbd5e1;">${escapeHtml(it.students || "—")}</td>
           <td style="padding:2px 6px;line-height:1.25;vertical-align:top;color:#cbd5e1;">${escapeHtml(it.task)}</td>
           <td style="padding:2px 6px;line-height:1.25;vertical-align:top;color:#aeb6c6;">${escapeHtml(it.keyword || d.keyword || "")}</td>
         </tr>
@@ -2477,6 +2479,7 @@ function drawKeywordOverlapTimeline(rows, windowDays) {
             <tr style="position:sticky;top:0;background:rgba(10,11,17,0.92);backdrop-filter: blur(6px);">
               <th style="text-align:left;padding:5px 6px;color:#f2f2f2;font-weight:650;border-bottom:1px solid rgba(255,255,255,0.10);">Programme</th>
               <th style="text-align:left;padding:5px 6px;color:#f2f2f2;font-weight:650;border-bottom:1px solid rgba(255,255,255,0.10);">Date</th>
+              <th style="text-align:left;padding:5px 6px;color:#f2f2f2;font-weight:650;border-bottom:1px solid rgba(255,255,255,0.10);">Level of B-made input expected</th>
               <th style="text-align:left;padding:5px 6px;color:#f2f2f2;font-weight:650;border-bottom:1px solid rgba(255,255,255,0.10);">Task</th>
               <th style="text-align:left;padding:5px 6px;color:#f2f2f2;font-weight:650;border-bottom:1px solid rgba(255,255,255,0.10);">Keyword</th>
             </tr>
