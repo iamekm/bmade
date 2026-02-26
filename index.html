@@ -99,7 +99,7 @@
       color: var(--text);
     }
 
-    select, input[type="date"], input[type="number"], button {
+    select, input[type="date"], input[type="number"], input[type="text"], input[type="search"], button {
       width: 100%;
       box-sizing: border-box;
       padding: 9px 10px;
@@ -389,7 +389,7 @@
 <header>
   <h1>B-made planning dashboard</h1>
 
-  <a class="btnTemplate" href="./Template-20260226.xlsx" download="Template-20260226.xlsx">
+  <a class="btnTemplate" href="./template.xlsx" download="bmade-template.xlsx">
     Download template
   </a>
 
@@ -427,16 +427,17 @@
     <label>Location</label>
     <select id="filterLocation" multiple></select>
 
+    <label>Search (module, keywords, location)</label>
+    <input id="searchBox" type="search" placeholder="e.g. Casting, Gordon Street, BARC0140" />
 
-    
-
-    <label>Tentative or known</label>
-    <select id="filterCertainty">
-      <option value="">All</option>
-      <option value="Known">Known</option>
-      <option value="Tentative">Tentative</option>
+    <label>Severity mode</label>
+    <select id="severityMode">
+      <option value="expected" selected>Expected students</option>
+      <option value="cohort">Full cohort size (worst case)</option>
     </select>
-<div class="row">
+
+
+    <div class="row">
       <div>
         <label>Year group</label>
         <select id="filterYear">
@@ -509,7 +510,7 @@
       </div>
       <div class="note">
         Severity weighting:
-        Students expected is bucketed as 1-10 → 1, 11-20 → 2, 21-30 → 3, 31+ → 4.
+        Cohort size is bucketed as 1-10 → 1, 11-20 → 2, 21-30 → 3, 31+ → 4.
         Severity per task day = likelihood × bucket weight.
       </div>
     </div>
@@ -544,6 +545,12 @@
         <svg id="totalCurve" width="1400" height="260"></svg>
       </div>
       <div class="note">Single curve that sums weekly severity across all programmes, using the current filters.</div>
+
+      <h2 style="margin-top:14px;">Weekly severity by task type (stacked)</h2>
+      <div class="svgwrap">
+        <svg id="typeStack" width="1400" height="360"></svg>
+      </div>
+      <div class="note">Stacked chart shows weekly severity split by task type (all programmes combined).</div>
 
       <h2 style="margin-top:14px;">Severity curves by location</h2>
       <div class="svgwrap">
@@ -604,7 +611,7 @@
 
   // Accepts minor variations in headings
 const COLMAP = {
-  module: ["module", "module code", "module name", "module title", "modulename"],
+  module: ["module", "module name", "module title", "modulename"],
   year: ["year", "year group", "yeargroup"],
   type: ["task", "type of task", "task type", "type", "activity type"],
   likelihood: [
@@ -615,18 +622,26 @@ const COLMAP = {
     "likelihood of input needed"
   ],
 
-  // New template: students expected can be provided directly or derived from overall cohort + percentage.
-  overallCohort: ["overall cohort size", "cohort size", "overall cohort", "overall"],
-  percentExpected: ["percentage of students expected", "% of students expected", "percent expected", "percentage expected"],
-  studentsExpected: ["student # expected", "students expected", "expected students", "student expected"],
+  // Cohort sizing (supports both legacy bucket-style sheets and the newer template)
+  cohort: ["overall cohort size", "cohort size", "estimated cohort size", "total cohort size", "group size"],
+  expectedPercent: ["percentage of students expected", "% expected", "percent expected", "expected %", "expected percentage"],
+  expectedStudents: ["student # expected", "students expected", "expected students", "expected student number", "student number expected"],
+
+  // Legacy single sizing column (often already bucketed) – kept for backwards compatibility
+  students: [
+    "level of b-made input expected",
+    "a measure of number of students (1-10, 10-20, 21-30, 31+)",
+    "number of students",
+    "students",
+    "student bucket"
+  ],
 
   start: ["activity start", "date of activity start", "activity start date", "start date", "date start"],
   finish: ["activity end", "date of activity finish", "activity end date", "finish date", "end date", "date finish"],
-
-  certainty: ["tentative or known?", "tentative/known", "status", "certainty"],
-
+  status: ["tentative or known?", "known or tentative", "status"],
   location: ["location", "site", "room", "space", "campus"],
-  keyword: ["keywords", "key words", "key word", "keyword", "tags", "tag"]
+  themes: ["themes", "keywords", "key themes", "academic themes", "theme", "tags"],
+  keyword: ["keyword", "keywords", "key word", "tags", "tag"]
 };
 
   function findCol(headers, wantList) {
@@ -682,34 +697,6 @@ const COLMAP = {
     return Math.max(lo, Math.min(hi, Math.round(n)));
   }
 
-
-  function parseNumber(v) {
-    if (v == null || v === "") return null;
-    const n = (typeof v === "number") ? v : Number(String(v).replace(/[^0-9.\-]/g, ""));
-    return Number.isFinite(n) ? n : null;
-  }
-
-  function parsePercent(v) {
-    // Accepts: 0.5, 50, "50%", "0.5", etc. Returns a fraction (0..1).
-    if (v == null || v === "") return null;
-
-    if (typeof v === "number" && Number.isFinite(v)) {
-      if (v > 1) return v / 100;
-      if (v >= 0) return v;
-      return null;
-    }
-
-    const s = String(v).trim();
-    if (!s) return null;
-    const hasPct = s.includes("%");
-    const n = Number(s.replace(/[^0-9.\-]/g, ""));
-    if (!Number.isFinite(n)) return null;
-
-    if (hasPct || n > 1) return n / 100;
-    if (n >= 0) return n;
-    return null;
-  }
-
   function parseStudentCount(v) {
     // Accepts: number, "32", "32 students", "1-10", "11-20", "21-30", "31+"
     if (v == null || v === "") return null;
@@ -721,7 +708,6 @@ const COLMAP = {
     // If a bucket string was provided, return a representative count so bucketing works
     if (s === "1-10") return 10;
     if (s === "10-20") return 20;
-    if (s === "11-20") return 20;
     if (s === "21-30") return 30;
     if (s === "31+") return 31;
 
@@ -757,6 +743,18 @@ function studentWeight(v) {
 
   return 1; // safe fallback
 }
+
+  function computeModeFields(task, mode) {
+    const m = mode || "expected";
+    const cohort = (task.cohortSize != null) ? task.cohortSize : task.studentsCount;
+    const expected = (task.expectedStudents != null) ? task.expectedStudents : task.studentsCount;
+
+    const count = (m === "cohort") ? cohort : expected;
+    task.modeStudentsCount = (count != null && Number.isFinite(Number(count))) ? Number(count) : null;
+    task.modeStudentsBucket = (task.modeStudentsCount != null) ? bucketFromCount(task.modeStudentsCount) : (task.studentsBucket || "");
+    task.severityPerDay = (task.likelihood || 0) * studentWeight(task.modeStudentsCount != null ? task.modeStudentsCount : task.modeStudentsBucket);
+    task.mode = m;
+  }
 
 
   function parseThemes(v) {
@@ -795,7 +793,8 @@ function studentWeight(v) {
   const elCourse = document.getElementById("filterCourse");
   const elType = document.getElementById("filterType");
   const elLocation = document.getElementById("filterLocation");
-  const elCertainty = document.getElementById("filterCertainty");
+  const elSearchBox = document.getElementById("searchBox");
+  const elSeverityMode = document.getElementById("severityMode");
   const elYear = document.getElementById("filterYear");
   const elStudents = document.getElementById("filterStudents");
   const elLikemin = document.getElementById("filterLikemin");
@@ -851,31 +850,80 @@ function studentWeight(v) {
       .sort((a, b) => a.localeCompare(b, "en-GB", { numeric: true }));
   }
 
+  // Some newer Excel templates carry formatting down to row 1,048,576.
+  // If we trust sheet["!ref"], SheetJS can attempt to materialise a huge blank matrix.
+  // Instead, derive an effective used range from *actual populated cells*.
+  function getEffectiveSheetRange(sheet, maxScanCells = 200000) {
+    // Returns a SheetJS range object ({s:{r,c}, e:{r,c}}) or null.
+    // maxScanCells is a safety valve for pathological sheets.
+    const keys = Object.keys(sheet || {});
+    let seen = 0;
+    let minR = Infinity, minC = Infinity, maxR = -1, maxC = -1;
+
+    for (const k of keys) {
+      if (k[0] === '!') continue;
+      // Cell addresses look like "A1", "BC23".
+      if (!/^[A-Z]+\d+$/.test(k)) continue;
+      const cell = sheet[k];
+      // Only count truly populated cells. (Avoid style-only artefacts.)
+      if (!cell || cell.v == null || String(cell.v).trim() === "") continue;
+      const rc = XLSX.utils.decode_cell(k);
+      minR = Math.min(minR, rc.r);
+      minC = Math.min(minC, rc.c);
+      maxR = Math.max(maxR, rc.r);
+      maxC = Math.max(maxC, rc.c);
+      seen++;
+      if (seen >= maxScanCells) break;
+    }
+
+    if (maxR < 0 || maxC < 0) return null;
+    // Ensure header row is included
+    minR = Math.min(minR, 0);
+    minC = Math.min(minC, 0);
+    return { s: { r: minR, c: minC }, e: { r: maxR, c: maxC } };
+  }
+
   function parseWorkbookToTasks(workbook, fileName) {
     const tasks = [];
     for (const sheetName of workbook.SheetNames) {
       const sheet = workbook.Sheets[sheetName];
       if (!sheet) continue;
 
-      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: "" });
+      const effRange = getEffectiveSheetRange(sheet);
+      // Use blankrows:false to avoid including empty rows inside the effective range.
+      const rows = XLSX.utils.sheet_to_json(sheet, {
+        header: 1,
+        raw: true,
+        blankrows: false,
+        range: effRange || undefined
+      });
       if (!rows || rows.length < 2) continue;
 
-      const headers = rows[0].map(h => String(h || "").trim());
+      // Trim header row and drop trailing empty columns
+      const headersRaw = rows[0].map(h => String(h || "").trim());
+      let lastHeaderIdx = headersRaw.length - 1;
+      while (lastHeaderIdx >= 0 && (!headersRaw[lastHeaderIdx] || headersRaw[lastHeaderIdx].trim() === "")) {
+        lastHeaderIdx--;
+      }
+      const headers = headersRaw.slice(0, lastHeaderIdx + 1);
       const idxModule = findCol(headers, COLMAP.module);
       const idxYear = findCol(headers, COLMAP.year);
       const idxType = findCol(headers, COLMAP.type);
       const idxLike = findCol(headers, COLMAP.likelihood);
-      const idxOverall = findCol(headers, COLMAP.overallCohort);
-      const idxPct = findCol(headers, COLMAP.percentExpected);
-      const idxStudExp = findCol(headers, COLMAP.studentsExpected);
+      const idxCohort = findCol(headers, COLMAP.cohort);
+      const idxExpPct = findCol(headers, COLMAP.expectedPercent);
+      const idxExpStud = findCol(headers, COLMAP.expectedStudents);
+      const idxStud = findCol(headers, COLMAP.students);
       const idxStart = findCol(headers, COLMAP.start);
       const idxFin = findCol(headers, COLMAP.finish);
+      const idxStatus = findCol(headers, COLMAP.status);
       const idxLoc = findCol(headers, COLMAP.location);
-      const idxCert = findCol(headers, COLMAP.certainty);
+      const idxThemes = findCol(headers, COLMAP.themes);
       const idxKeyword = findCol(headers, COLMAP.keyword);
 
       const required = [idxModule, idxYear, idxType, idxLike, idxStart, idxFin];
-      if (required.some(i => i < 0)) {
+      const hasSizing = (idxCohort >= 0) || (idxStud >= 0) || (idxExpStud >= 0) || (idxExpPct >= 0);
+      if (required.some(i => i < 0) || !hasSizing) {
         // skip sheets without the needed structure
         continue;
       }
@@ -887,31 +935,58 @@ function studentWeight(v) {
         const moduleName = String(row[idxModule] || "").trim();
         const yearGroup = clampInt(row[idxYear], 1, 9); // architecture years vary, keep generous
         const type = String(row[idxType] || "").trim();
-        const likelihood = clampInt(row[idxLike], 1, 3);
+        // Newer templates allow 0 (none) → 3 (definite)
+        const likelihood = clampInt(row[idxLike], 0, 3);
+                const cohortRaw = (idxCohort >= 0) ? row[idxCohort] : null;
+        let cohortSize = parseStudentCount(cohortRaw);
 
-        const overallCohort = (idxOverall >= 0) ? parseNumber(row[idxOverall]) : null;
-        const percentExpected = (idxPct >= 0) ? parsePercent(row[idxPct]) : null;
-        const studentsExpectedRaw = (idxStudExp >= 0) ? row[idxStudExp] : null;
-        const studentsExpected = parseNumber(studentsExpectedRaw);
+        // Expected students can be supplied directly, or derived from cohort size × expected percentage
+        const expStudRaw = (idxExpStud >= 0) ? row[idxExpStud] : null;
+        let expectedStudents = parseStudentCount(expStudRaw);
 
-        // Derive students expected if not supplied
-        const studentsCount = (studentsExpected != null)
-          ? Math.max(0, Math.round(studentsExpected))
-          : (overallCohort != null && percentExpected != null)
-              ? Math.max(0, Math.round(overallCohort * percentExpected))
-              : (overallCohort != null ? Math.max(0, Math.round(overallCohort)) : null);
+        let expectedPercent = null;
+        if (idxExpPct >= 0) {
+          const v = row[idxExpPct];
+          if (typeof v === "number" && Number.isFinite(v)) {
+            expectedPercent = v;
+          } else {
+            const s = String(v || "").trim();
+            const m = s.match(/[-+]?\d*\.?\d+/);
+            if (m) expectedPercent = Number(m[0]);
+          }
+        }
 
-        const studentsBucket = (studentsCount != null) ? bucketFromCount(studentsCount) : "";
-        const certainty = (idxCert >= 0) ? String(row[idxCert] || "").trim() : "";
+        // Legacy sizing column (often bucketed)
+        const legacyRaw = (idxStud >= 0) ? row[idxStud] : null;
+        const legacyCount = parseStudentCount(legacyRaw);
+
+        if (cohortSize == null && legacyCount != null) cohortSize = legacyCount;
+        if (expectedStudents == null && cohortSize != null && expectedPercent != null && Number.isFinite(expectedPercent)) {
+          const p = (expectedPercent > 1) ? (expectedPercent / 100) : expectedPercent;
+          expectedStudents = Math.max(0, Math.round(cohortSize * p));
+        }
+
+        // Default student count (used for legacy displays); severity mode can override later
+        const studentsCount = (cohortSize != null) ? cohortSize : legacyCount;
+        const studentsBucket = studentsCount != null ? bucketFromCount(studentsCount) : String(legacyRaw || cohortRaw || "").trim();
+
+        const statusRaw = (idxStatus >= 0) ? String(row[idxStatus] || "").trim() : "";
+        const statusNorm = (() => {
+          const s = statusRaw.toLowerCase();
+          if (s.includes("tent")) return "Tentative";
+          if (s.includes("know")) return "Known";
+          return "—";
+        })();
         const location = (idxLoc >= 0) ? String(row[idxLoc] || "").trim() : "";
-        const keywords = (idxKeyword >= 0) ? parseThemes(row[idxKeyword]) : [];
+        const themes = (idxThemes >= 0) ? parseThemes(row[idxThemes]) : [];
+        const keywords = (idxKeyword >= 0) ? parseThemes(row[idxKeyword]) : themes;
         const startISO = excelDateToISO(row[idxStart]);
         const finishISO = excelDateToISO(row[idxFin]);
 
         const hasAny = moduleName || type || startISO || finishISO;
         if (!hasAny) continue;
 
-        if (!moduleName || !type || !startISO || !finishISO || !likelihood) {
+        if (!moduleName || !type || !startISO || !finishISO || likelihood == null) {
           // keep but mark as invalid to report
           tasks.push({
             valid: false,
@@ -923,12 +998,13 @@ function studentWeight(v) {
             likelihood,
             studentsBucket,
             studentsCount,
+            cohortSize,
+            expectedStudents,
+            expectedPercent,
+            status: statusNorm,
             location,
+            themes,
             keywords,
-            certainty,
-            overallCohort,
-            percentExpected,
-            
             startISO,
             finishISO
           });
@@ -956,15 +1032,20 @@ function studentWeight(v) {
           likelihood,
           studentsBucket,
           studentsCount,
+          cohortSize,
+          expectedStudents,
+          expectedPercent,
+          status: statusNorm,
           location,
+          themes,
           keywords,
-          certainty,
-          overallCohort,
-          percentExpected,
-          
           startISO: start.toISODate(),
           finishISO: end.toISODate(),
-          severityPerDay: likelihood * studentWeight(studentsCount != null ? studentsCount : studentsBucket),
+          severityPerDay: likelihood * studentWeight((cohortSize != null ? cohortSize : studentsCount) != null ? (cohortSize != null ? cohortSize : studentsCount) : studentsBucket),
+          // mode-specific values are computed later
+          modeStudentsCount: null,
+          modeStudentsBucket: "",
+          mode: "expected",
         });
       }
     }
@@ -988,11 +1069,6 @@ function studentWeight(v) {
     const years = uniqueSorted(valid.map(t => t.yearGroup).filter(v => v != null));
     elYear.innerHTML = `<option value="">All</option>` + years.map(y => `<option value="${y}">${y}</option>`).join("");
 
-
-    // tentative / known
-    const certs = uniqueSorted(valid.map(t => (t.certainty && String(t.certainty).trim()) ? String(t.certainty).trim() : "—"));
-    elCertainty.innerHTML = `<option value="">All</option>` + certs.map(c => `<option value="${c}">${c}</option>`).join("");
-
     // date range defaults
     const starts = valid.map(t => t.startISO).filter(Boolean).sort();
     const ends = valid.map(t => t.finishISO).filter(Boolean).sort();
@@ -1009,7 +1085,7 @@ function studentWeight(v) {
     const locations = new Set(selectedValues(elLocation));
     const year = elYear.value ? Number(elYear.value) : null;
     const students = elStudents.value || null;
-    const certainty = elCertainty.value || null;
+    const q = (elSearchBox && elSearchBox.value) ? elSearchBox.value.trim().toLowerCase() : "";
 
     const likeMin = Number(elLikemin.value || 1);
     const likeMax = Number(elLikemax.value || 3);
@@ -1019,14 +1095,21 @@ function studentWeight(v) {
 
     const valid = allTasks.filter(t => t.valid);
 
+    // apply severity mode (expected vs worst-case cohort) before filtering + drawing
+    const mode = (elSeverityMode && elSeverityMode.value) ? elSeverityMode.value : "expected";
+    for (const t of valid) computeModeFields(t, mode);
+
     filteredTasks = valid.filter(t => {
       if (courses.size && !courses.has(t.course)) return false;
       if (types.size && !types.has(t.type)) return false;
       const loc = (t.location && String(t.location).trim()) ? String(t.location).trim() : "—";
       if (locations.size && !locations.has(loc)) return false;
+      if (q) {
+        const hay = [t.moduleName, t.course, t.location, t.type, (t.keywords || []).join(" "), (t.themes || []).join(" ")].join(" ").toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
       if (year != null && t.yearGroup !== year) return false;
-      if (students && String(t.studentsBucket).trim() !== students) return false;
-      if (certainty && String(t.certainty || "").trim() !== certainty) return false;
+      if (students && String(t.modeStudentsBucket || t.studentsBucket).trim() !== students) return false;
       if (t.likelihood < likeMin || t.likelihood > likeMax) return false;
 
       // overlap test with filter date window
@@ -1042,9 +1125,10 @@ function studentWeight(v) {
   function resetFilters() {
     refreshFilterOptions();
     elStudents.value = "";
-    elCertainty.value = "";
     elLikemin.value = "1";
     elLikemax.value = "3";
+    if (elSearchBox) elSearchBox.value = "";
+    if (elSeverityMode) elSeverityMode.value = "expected";
     applyFilters();
   }
 
@@ -1054,6 +1138,7 @@ function studentWeight(v) {
   drawSeverityLines(filteredTasks);
   drawHeatBlocks(filteredTasks);
   drawTotalCurve(filteredTasks);
+  drawTypeStacked(filteredTasks);
   drawLocationCurves(filteredTasks);
   drawThemeBars(filteredTasks);
   drawThemeTrends(filteredTasks);
@@ -1091,7 +1176,10 @@ function studentWeight(v) {
       `Task type: ${task.type}`,
       `Dates: ${task.startISO} → ${task.finishISO}`,
       `Likelihood: ${task.likelihood}`,
-      `Students: ${task.studentsCount != null ? task.studentsCount + ' (' + task.studentsBucket + ')' : task.studentsBucket}`,
+      `Students (${task.mode === 'cohort' ? 'cohort' : 'expected'}): ${task.modeStudentsCount != null ? task.modeStudentsCount + ' (' + task.modeStudentsBucket + ')' : (task.modeStudentsBucket || '—')}`,
+      `Expected students: ${task.expectedStudents != null ? task.expectedStudents : '—'}${task.expectedPercent != null && task.cohortSize != null ? ' (' + ((task.expectedPercent > 1) ? task.expectedPercent : (task.expectedPercent*100)).toFixed(0) + '% of ' + task.cohortSize + ')' : ''}`,
+      `Cohort size: ${task.cohortSize != null ? task.cohortSize : '—'}`,
+      `Status: ${task.status || '—'}`,
       `Severity per day: ${task.severityPerDay}`
     ];
 
@@ -1231,8 +1319,6 @@ function drawGantt(tasks) {
     })
     .attr("height", Math.max(10, y.bandwidth() - 2))
     .attr("fill", d => likelihoodColour(d.likelihood))
-    .attr("opacity", d => (normKey(d.certainty) === "tentative" ? 0.75 : 1))
-    .attr("stroke-dasharray", d => (normKey(d.certainty) === "tentative" ? "4,2" : null))
     .on("mousemove", function(evt, d) { showTooltip(evt, d); })
     .on("mouseleave", hideTooltip);
 
@@ -1684,11 +1770,15 @@ function drawTotalCurve(tasks) {
   const maxDT = startOfISOWeek(DateTime.fromISO(maxISO, { zone: "utc" }));
 
   const weeks = [];
-  for (let d = minDT; d <= maxDT; d = d.plus({ weeks: 1 })) {
-    weeks.push(d.toISODate());
-  }
+  for (let d = minDT; d <= maxDT; d = d.plus({ weeks: 1 })) weeks.push(d.toISODate());
 
-  const totals = new Map(); // weekISO -> value
+  const totalsKnown = new Map();   // weekISO -> value
+  const totalsTent = new Map();    // weekISO -> value
+
+  function isTentative(t) {
+    const s = String(t.status || "").toLowerCase();
+    return s.includes("tent");
+  }
 
   for (const t of tasks) {
     const s = DateTime.fromISO(t.startISO, { zone: "utc" }).startOf("day");
@@ -1697,19 +1787,27 @@ function drawTotalCurve(tasks) {
 
     for (let d = s; d <= f; d = d.plus({ days: 1 })) {
       const w = startOfISOWeek(d).toISODate();
-      totals.set(w, (totals.get(w) || 0) + (t.severityPerDay || 0));
+      const add = (t.severityPerDay || 0);
+      if (isTentative(t)) totalsTent.set(w, (totalsTent.get(w) || 0) + add);
+      else totalsKnown.set(w, (totalsKnown.get(w) || 0) + add);
     }
   }
 
-  const data = weeks.map(w => ({
-    weekISO: w,
-    date: DateTime.fromISO(w, { zone: "utc" }).toJSDate(),
-    value: totals.get(w) || 0
-  }));
+  const data = weeks.map(w => {
+    const known = totalsKnown.get(w) || 0;
+    const tent = totalsTent.get(w) || 0;
+    return {
+      weekISO: w,
+      date: DateTime.fromISO(w, { zone: "utc" }).toJSDate(),
+      known,
+      tentative: tent,
+      total: known + tent
+    };
+  });
 
-  const maxVal = d3.max(data, d => d.value) || 1;
+  const maxVal = d3.max(data, d => d.total) || 1;
 
-  const margin = { top: 24, right: 20, bottom: 36, left: 60 };
+  const margin = { top: 24, right: 140, bottom: 36, left: 60 };
   const innerW = width - margin.left - margin.right;
   const innerH = height - margin.top - margin.bottom;
 
@@ -1739,28 +1837,41 @@ function drawTotalCurve(tasks) {
     .y(d => y(d.value))
     .curve(d3.curveMonotoneX);
 
+  // Known (solid)
   g.append("path")
-    .datum(data)
+    .datum(data.map(d => ({ ...d, value: d.known })))
     .attr("fill", "none")
     .attr("stroke", "rgba(122,162,255,0.95)")
     .attr("stroke-width", 2.5)
     .attr("d", line);
 
+  // Tentative (dashed)
+  g.append("path")
+    .datum(data.map(d => ({ ...d, value: d.tentative })))
+    .attr("fill", "none")
+    .attr("stroke", "rgba(122,162,255,0.95)")
+    .attr("stroke-width", 2.5)
+    .attr("stroke-dasharray", "7,6")
+    .attr("opacity", 0.9)
+    .attr("d", line);
+
+  // points for hover
   g.selectAll("circle")
     .data(data)
     .enter()
     .append("circle")
     .attr("cx", d => x(d.date))
-    .attr("cy", d => y(d.value))
+    .attr("cy", d => y(d.total))
     .attr("r", 3)
-    .attr("fill", "rgba(122,162,255,0.95)")
+    .attr("fill", "rgba(255,184,107,0.90)")
     .on("mousemove", function(evt, d) {
       const dt = DateTime.fromISO(d.weekISO, { zone: "utc" });
-
       tooltip.innerHTML =
         `<strong>All programmes</strong>\n` +
         `Week commencing: ${dt.toFormat("dd LLL yyyy")}\n` +
-        `Weekly severity: ${d.value.toFixed(0)}`;
+        `Known: ${d.known.toFixed(0)}\n` +
+        `Tentative: ${d.tentative.toFixed(0)}\n` +
+        `Total: ${d.total.toFixed(0)}`;
 
       tooltip.style.opacity = "1";
       tooltip.style.transform = "translateY(0px)";
@@ -1768,12 +1879,205 @@ function drawTotalCurve(tasks) {
     })
     .on("mouseleave", hideTooltip);
 
+  // simple legend
+  const leg = svgT.append("g")
+    .attr("transform", `translate(${margin.left + innerW + 10},${margin.top + 10})`);
+
+  leg.append("line")
+    .attr("x1", 0).attr("x2", 28)
+    .attr("y1", 0).attr("y2", 0)
+    .attr("stroke", "rgba(122,162,255,0.95)")
+    .attr("stroke-width", 3);
+
+  leg.append("text")
+    .attr("x", 34).attr("y", 4)
+    .attr("fill", "#aeb6c6").attr("font-size", 11)
+    .text("Known");
+
+  leg.append("line")
+    .attr("x1", 0).attr("x2", 28)
+    .attr("y1", 18).attr("y2", 18)
+    .attr("stroke", "rgba(122,162,255,0.95)")
+    .attr("stroke-width", 3)
+    .attr("stroke-dasharray", "7,6");
+
+  leg.append("text")
+    .attr("x", 34).attr("y", 22)
+    .attr("fill", "#aeb6c6").attr("font-size", 11)
+    .text("Tentative");
+
   svgT.append("text")
     .attr("x", margin.left)
     .attr("y", 16)
     .attr("fill", "#aeb6c6")
     .attr("font-size", 12)
-    .text("Total weekly severity (all programmes).");
+    .text("Total weekly severity split by status (known solid, tentative dashed).");
+}
+
+
+function drawTypeStacked(tasks) {
+  const svgS = d3.select("#typeStack");
+  if (svgS.empty()) return;
+
+  svgS.selectAll("*").remove();
+
+  const width = 1400;
+  const height = 360;
+  svgS.attr("width", width).attr("height", height);
+
+  if (!tasks || !tasks.length) return;
+
+  const types = uniqueSorted(tasks.map(t => t.type));
+
+  const minISO = d3.min(tasks, d => d.startISO);
+  const maxISO = d3.max(tasks, d => d.finishISO);
+
+  const minDT = startOfISOWeek(DateTime.fromISO(minISO, { zone: "utc" }));
+  const maxDT = startOfISOWeek(DateTime.fromISO(maxISO, { zone: "utc" }));
+
+  const weeks = [];
+  for (let d = minDT; d <= maxDT; d = d.plus({ weeks: 1 })) weeks.push(d.toISODate());
+
+  // aggregate week -> {type: value}
+  const weekMap = new Map();
+  for (const w of weeks) {
+    const obj = { weekISO: w, date: DateTime.fromISO(w, { zone: "utc" }).toJSDate() };
+    for (const ty of types) obj[ty] = 0;
+    weekMap.set(w, obj);
+  }
+
+  for (const t of tasks) {
+    const s = DateTime.fromISO(t.startISO, { zone: "utc" }).startOf("day");
+    const f = DateTime.fromISO(t.finishISO, { zone: "utc" }).startOf("day");
+    if (!s.isValid || !f.isValid) continue;
+
+    for (let d = s; d <= f; d = d.plus({ days: 1 })) {
+      const w = startOfISOWeek(d).toISODate();
+      const row = weekMap.get(w);
+      if (!row) continue;
+      row[t.type] = (row[t.type] || 0) + (t.severityPerDay || 0);
+    }
+  }
+
+  const data = weeks.map(w => weekMap.get(w));
+  const stack = d3.stack().keys(types);
+  const series = stack(data);
+
+  const maxVal = d3.max(series, s => d3.max(s, d => d[1])) || 1;
+
+  const margin = { top: 26, right: 220, bottom: 40, left: 60 };
+  const innerW = width - margin.left - margin.right;
+  const innerH = height - margin.top - margin.bottom;
+
+  const x = d3.scaleTime()
+    .domain([data[0].date, DateTime.fromISO(weeks[weeks.length - 1], { zone: "utc" }).plus({ weeks: 1 }).toJSDate()])
+    .range([0, innerW]);
+
+  const y = d3.scaleLinear().domain([0, maxVal]).nice().range([innerH, 0]);
+
+  const colour = d3.scaleOrdinal()
+    .domain(types)
+    .range(d3.schemeTableau10.concat(d3.schemeSet3).slice(0, Math.max(10, types.length)));
+
+  const g = svgS.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+
+  g.append("g")
+    .attr("class", "grid")
+    .call(d3.axisLeft(y).ticks(5).tickSize(-innerW).tickFormat(() => ""));
+
+  g.append("g")
+    .attr("class", "axis")
+    .attr("transform", `translate(0,${innerH})`)
+    .call(d3.axisBottom(x).ticks(d3.timeWeek.every(2)).tickFormat(d3.timeFormat("%d %b")));
+
+  g.append("g")
+    .attr("class", "axis")
+    .call(d3.axisLeft(y).ticks(5));
+
+  const area = d3.area()
+    .x(d => x(d.data.date))
+    .y0(d => y(d[0]))
+    .y1(d => y(d[1]))
+    .curve(d3.curveMonotoneX);
+
+  g.append("g")
+    .selectAll("path")
+    .data(series)
+    .enter()
+    .append("path")
+    .attr("d", area)
+    .attr("fill", d => colour(d.key))
+    .attr("opacity", 0.75);
+
+  // hover: invisible rects per week for totals breakdown
+  const hoverW = innerW / Math.max(1, data.length);
+  g.append("g")
+    .selectAll("rect")
+    .data(data)
+    .enter()
+    .append("rect")
+    .attr("x", d => x(d.date))
+    .attr("y", 0)
+    .attr("width", hoverW)
+    .attr("height", innerH)
+    .attr("fill", "transparent")
+    .on("mousemove", function(evt, d) {
+      const dt = DateTime.fromISO(d.weekISO, { zone: "utc" });
+      const total = types.reduce((acc, k) => acc + (d[k] || 0), 0);
+      const top = [...types].sort((a, b) => (d[b] || 0) - (d[a] || 0)).slice(0, 6);
+      tooltip.innerHTML =
+        `<strong>All programmes</strong>\n` +
+        `Week commencing: ${dt.toFormat("dd LLL yyyy")}\n` +
+        `Total severity: ${total.toFixed(0)}\n` +
+        top.map(k => `${k}: ${(d[k] || 0).toFixed(0)}`).join("\n");
+
+      tooltip.style.opacity = "1";
+      tooltip.style.transform = "translateY(0px)";
+      placeTooltip(evt, 380, 260);
+    })
+    .on("mouseleave", hideTooltip);
+
+  // legend
+  const legend = svgS.append("g")
+    .attr("transform", `translate(${margin.left + innerW + 14},${margin.top})`);
+
+  legend.append("text")
+    .attr("x", 0)
+    .attr("y", 0)
+    .attr("fill", "#aeb6c6")
+    .attr("font-size", 12)
+    .text("Task type");
+
+  legend.selectAll("g.item")
+    .data(types)
+    .enter()
+    .append("g")
+    .attr("class", "item")
+    .attr("transform", (d, i) => `translate(0,${16 + i * 16})`)
+    .each(function(d) {
+      const item = d3.select(this);
+      item.append("rect")
+        .attr("x", 0)
+        .attr("y", -10)
+        .attr("width", 10)
+        .attr("height", 10)
+        .attr("rx", 3)
+        .attr("ry", 3)
+        .attr("fill", colour(d));
+      item.append("text")
+        .attr("x", 16)
+        .attr("y", -2)
+        .attr("fill", "#aeb6c6")
+        .attr("font-size", 11)
+        .text(d);
+    });
+
+  svgS.append("text")
+    .attr("x", margin.left)
+    .attr("y", 16)
+    .attr("fill", "#aeb6c6")
+    .attr("font-size", 12)
+    .text("Weekly severity by task type (stacked).");
 }
 
 function drawLocationCurves(tasks) {
@@ -2726,6 +3030,8 @@ Rows needing attention (missing required cells): ${invalidCount}`
 
   elApply.addEventListener("click", () => applyFilters());
   elReset.addEventListener("click", () => resetFilters());
+  if (elSearchBox) elSearchBox.addEventListener("input", () => applyFilters());
+  if (elSeverityMode) elSeverityMode.addEventListener("change", () => applyFilters());
 
   elLikemin.addEventListener("change", () => {
     const a = Number(elLikemin.value);
