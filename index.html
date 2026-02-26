@@ -428,7 +428,15 @@
     <select id="filterLocation" multiple></select>
 
 
-    <div class="row">
+    
+
+    <label>Tentative or known</label>
+    <select id="filterCertainty">
+      <option value="">All</option>
+      <option value="Known">Known</option>
+      <option value="Tentative">Tentative</option>
+    </select>
+<div class="row">
       <div>
         <label>Year group</label>
         <select id="filterYear">
@@ -501,7 +509,7 @@
       </div>
       <div class="note">
         Severity weighting:
-        Cohort size is bucketed as 1-10 → 1, 11-20 → 2, 21-30 → 3, 31+ → 4.
+        Students expected is bucketed as 1-10 → 1, 11-20 → 2, 21-30 → 3, 31+ → 4.
         Severity per task day = likelihood × bucket weight.
       </div>
     </div>
@@ -596,7 +604,7 @@
 
   // Accepts minor variations in headings
 const COLMAP = {
-  module: ["module", "module name", "module title", "modulename"],
+  module: ["module", "module code", "module name", "module title", "modulename"],
   year: ["year", "year group", "yeargroup"],
   type: ["task", "type of task", "task type", "type", "activity type"],
   likelihood: [
@@ -606,20 +614,19 @@ const COLMAP = {
     "input likelihood",
     "likelihood of input needed"
   ],
-  students: [
-    "level of b-made input expected",
-    "a measure of number of students (1-10, 10-20, 21-30, 31+)",
-    "number of students",
-    "students",
-    "student bucket",
-    "cohort size",
-    "estimated cohort size"
-  ],
+
+  // New template: students expected can be provided directly or derived from overall cohort + percentage.
+  overallCohort: ["overall cohort size", "cohort size", "overall cohort", "overall"],
+  percentExpected: ["percentage of students expected", "% of students expected", "percent expected", "percentage expected"],
+  studentsExpected: ["student # expected", "students expected", "expected students", "student expected"],
+
   start: ["activity start", "date of activity start", "activity start date", "start date", "date start"],
   finish: ["activity end", "date of activity finish", "activity end date", "finish date", "end date", "date finish"],
+
+  certainty: ["tentative or known?", "tentative/known", "status", "certainty"],
+
   location: ["location", "site", "room", "space", "campus"],
-  themes: ["themes", "keywords", "key themes", "academic themes", "theme", "tags"],
-  keyword: ["keyword", "keywords", "key word", "tags", "tag"]
+  keyword: ["keywords", "key words", "key word", "keyword", "tags", "tag"]
 };
 
   function findCol(headers, wantList) {
@@ -675,6 +682,34 @@ const COLMAP = {
     return Math.max(lo, Math.min(hi, Math.round(n)));
   }
 
+
+  function parseNumber(v) {
+    if (v == null || v === "") return null;
+    const n = (typeof v === "number") ? v : Number(String(v).replace(/[^0-9.\-]/g, ""));
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function parsePercent(v) {
+    // Accepts: 0.5, 50, "50%", "0.5", etc. Returns a fraction (0..1).
+    if (v == null || v === "") return null;
+
+    if (typeof v === "number" && Number.isFinite(v)) {
+      if (v > 1) return v / 100;
+      if (v >= 0) return v;
+      return null;
+    }
+
+    const s = String(v).trim();
+    if (!s) return null;
+    const hasPct = s.includes("%");
+    const n = Number(s.replace(/[^0-9.\-]/g, ""));
+    if (!Number.isFinite(n)) return null;
+
+    if (hasPct || n > 1) return n / 100;
+    if (n >= 0) return n;
+    return null;
+  }
+
   function parseStudentCount(v) {
     // Accepts: number, "32", "32 students", "1-10", "11-20", "21-30", "31+"
     if (v == null || v === "") return null;
@@ -686,6 +721,7 @@ const COLMAP = {
     // If a bucket string was provided, return a representative count so bucketing works
     if (s === "1-10") return 10;
     if (s === "10-20") return 20;
+    if (s === "11-20") return 20;
     if (s === "21-30") return 30;
     if (s === "31+") return 31;
 
@@ -759,6 +795,7 @@ function studentWeight(v) {
   const elCourse = document.getElementById("filterCourse");
   const elType = document.getElementById("filterType");
   const elLocation = document.getElementById("filterLocation");
+  const elCertainty = document.getElementById("filterCertainty");
   const elYear = document.getElementById("filterYear");
   const elStudents = document.getElementById("filterStudents");
   const elLikemin = document.getElementById("filterLikemin");
@@ -828,14 +865,16 @@ function studentWeight(v) {
       const idxYear = findCol(headers, COLMAP.year);
       const idxType = findCol(headers, COLMAP.type);
       const idxLike = findCol(headers, COLMAP.likelihood);
-      const idxStud = findCol(headers, COLMAP.students);
+      const idxOverall = findCol(headers, COLMAP.overallCohort);
+      const idxPct = findCol(headers, COLMAP.percentExpected);
+      const idxStudExp = findCol(headers, COLMAP.studentsExpected);
       const idxStart = findCol(headers, COLMAP.start);
       const idxFin = findCol(headers, COLMAP.finish);
       const idxLoc = findCol(headers, COLMAP.location);
-      const idxThemes = findCol(headers, COLMAP.themes);
+      const idxCert = findCol(headers, COLMAP.certainty);
       const idxKeyword = findCol(headers, COLMAP.keyword);
 
-      const required = [idxModule, idxYear, idxType, idxLike, idxStud, idxStart, idxFin];
+      const required = [idxModule, idxYear, idxType, idxLike, idxStart, idxFin];
       if (required.some(i => i < 0)) {
         // skip sheets without the needed structure
         continue;
@@ -849,13 +888,23 @@ function studentWeight(v) {
         const yearGroup = clampInt(row[idxYear], 1, 9); // architecture years vary, keep generous
         const type = String(row[idxType] || "").trim();
         const likelihood = clampInt(row[idxLike], 1, 3);
-        const studentsRaw = row[idxStud];
-        const studentsCount = parseStudentCount(studentsRaw);
-        // Keep a bucket string for filtering + display, even when spreadsheet provides a single cohort-size number.
-        const studentsBucket = studentsCount != null ? bucketFromCount(studentsCount) : String(studentsRaw || "").trim();
+
+        const overallCohort = (idxOverall >= 0) ? parseNumber(row[idxOverall]) : null;
+        const percentExpected = (idxPct >= 0) ? parsePercent(row[idxPct]) : null;
+        const studentsExpectedRaw = (idxStudExp >= 0) ? row[idxStudExp] : null;
+        const studentsExpected = parseNumber(studentsExpectedRaw);
+
+        // Derive students expected if not supplied
+        const studentsCount = (studentsExpected != null)
+          ? Math.max(0, Math.round(studentsExpected))
+          : (overallCohort != null && percentExpected != null)
+              ? Math.max(0, Math.round(overallCohort * percentExpected))
+              : (overallCohort != null ? Math.max(0, Math.round(overallCohort)) : null);
+
+        const studentsBucket = (studentsCount != null) ? bucketFromCount(studentsCount) : "";
+        const certainty = (idxCert >= 0) ? String(row[idxCert] || "").trim() : "";
         const location = (idxLoc >= 0) ? String(row[idxLoc] || "").trim() : "";
-        const themes = (idxThemes >= 0) ? parseThemes(row[idxThemes]) : [];
-        const keywords = (idxKeyword >= 0) ? parseThemes(row[idxKeyword]) : themes;
+        const keywords = (idxKeyword >= 0) ? parseThemes(row[idxKeyword]) : [];
         const startISO = excelDateToISO(row[idxStart]);
         const finishISO = excelDateToISO(row[idxFin]);
 
@@ -875,8 +924,11 @@ function studentWeight(v) {
             studentsBucket,
             studentsCount,
             location,
-            themes,
             keywords,
+            certainty,
+            overallCohort,
+            percentExpected,
+            
             startISO,
             finishISO
           });
@@ -905,8 +957,11 @@ function studentWeight(v) {
           studentsBucket,
           studentsCount,
           location,
-          themes,
           keywords,
+          certainty,
+          overallCohort,
+          percentExpected,
+          
           startISO: start.toISODate(),
           finishISO: end.toISODate(),
           severityPerDay: likelihood * studentWeight(studentsCount != null ? studentsCount : studentsBucket),
@@ -933,6 +988,11 @@ function studentWeight(v) {
     const years = uniqueSorted(valid.map(t => t.yearGroup).filter(v => v != null));
     elYear.innerHTML = `<option value="">All</option>` + years.map(y => `<option value="${y}">${y}</option>`).join("");
 
+
+    // tentative / known
+    const certs = uniqueSorted(valid.map(t => (t.certainty && String(t.certainty).trim()) ? String(t.certainty).trim() : "—"));
+    elCertainty.innerHTML = `<option value="">All</option>` + certs.map(c => `<option value="${c}">${c}</option>`).join("");
+
     // date range defaults
     const starts = valid.map(t => t.startISO).filter(Boolean).sort();
     const ends = valid.map(t => t.finishISO).filter(Boolean).sort();
@@ -949,6 +1009,7 @@ function studentWeight(v) {
     const locations = new Set(selectedValues(elLocation));
     const year = elYear.value ? Number(elYear.value) : null;
     const students = elStudents.value || null;
+    const certainty = elCertainty.value || null;
 
     const likeMin = Number(elLikemin.value || 1);
     const likeMax = Number(elLikemax.value || 3);
@@ -965,6 +1026,7 @@ function studentWeight(v) {
       if (locations.size && !locations.has(loc)) return false;
       if (year != null && t.yearGroup !== year) return false;
       if (students && String(t.studentsBucket).trim() !== students) return false;
+      if (certainty && String(t.certainty || "").trim() !== certainty) return false;
       if (t.likelihood < likeMin || t.likelihood > likeMax) return false;
 
       // overlap test with filter date window
@@ -980,6 +1042,7 @@ function studentWeight(v) {
   function resetFilters() {
     refreshFilterOptions();
     elStudents.value = "";
+    elCertainty.value = "";
     elLikemin.value = "1";
     elLikemax.value = "3";
     applyFilters();
@@ -1168,6 +1231,8 @@ function drawGantt(tasks) {
     })
     .attr("height", Math.max(10, y.bandwidth() - 2))
     .attr("fill", d => likelihoodColour(d.likelihood))
+    .attr("opacity", d => (normKey(d.certainty) === "tentative" ? 0.75 : 1))
+    .attr("stroke-dasharray", d => (normKey(d.certainty) === "tentative" ? "4,2" : null))
     .on("mousemove", function(evt, d) { showTooltip(evt, d); })
     .on("mouseleave", hideTooltip);
 
