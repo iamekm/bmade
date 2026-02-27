@@ -4,398 +4,145 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>B made planning: Gantt + severity</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/luxon/3.5.0/luxon.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/luxon/3.5.0/luxon.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
 
 <style>
-    :root {
-      --bg: #0b0c10;
-      --panel: #11131a;
-      --text: #e7e7e7;
-      --muted: #a7a7a7;
-      --grid: #2a2f3a;
-      --accent: #7aa2ff;
-      --warn: #ffb86b;
-      --bad: #ff6b6b;
-      --good: #6bffb3;
-    }
+  :root {
+    --bg: #0b0c10; --panel: #11131a; --text: #e7e7e7; --muted: #a7a7a7;
+    --grid: #2a2f3a; --accent: #7aa2ff; --warn: #ffb86b; --bad: #ff6b6b; --good: #6bffb3;
+  }
 
-    body {
-      margin: 0;
-      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
-      background: var(--bg);
-      color: var(--text);
-    }
+  *, *::before, *::after { box-sizing: border-box; }
 
-    header {
-      padding: 16px 18px;
-      border-bottom: 1px solid var(--grid);
-      background: linear-gradient(180deg, #0e1018, #0b0c10);
-      position: sticky;
-      top: 0;
-      z-index: 10;
-    }
+  body { margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; background:var(--bg); color:var(--text); }
 
-    header h1 {
-      margin: 0 0 6px 0;
-      font-size: 18px;
-      font-weight: 650;
-      letter-spacing: 0.2px;
-    }
+  header {
+    padding:16px 18px; border-bottom:1px solid var(--grid);
+    background:linear-gradient(180deg,#0e1018,#0b0c10);
+    position:sticky; top:0; z-index:10;
+  }
+  header h1 { margin:0 0 6px; font-size:18px; font-weight:650; letter-spacing:0.2px; }
+  header p  { margin:0; font-size:13px; color:var(--muted); line-height:1.35; }
 
-    header p {
-      margin: 0;
-      font-size: 13px;
-      color: var(--muted);
-      line-height: 1.35;
-    }
+  .wrap {
+    display:grid; grid-template-columns:360px 1fr; gap:12px; padding:12px;
+  }
+  @media (max-width:1050px) { .wrap { grid-template-columns:1fr; } }
 
-    *,
-    *::before,
-    *::after {
-      box-sizing: border-box;
-    }
+  .card {
+    background:var(--panel); border:1px solid var(--grid); border-radius:14px;
+    padding:12px; box-shadow:0 8px 22px rgba(0,0,0,.25);
+  }
+  .card h2 { margin:0 0 10px; font-size:14px; font-weight:650; color:#f1f1f1; }
 
-    .wrap {
-      display: grid;
-      grid-template-columns: 360px 1fr;
-      gap: 12px;
-      padding: 12px;
-    }
+  label { display:block; font-size:12px; color:var(--muted); margin:10px 0 6px; }
 
-    @media (max-width: 1050px) {
-      .wrap { grid-template-columns: 1fr; }
-    }
+  input[type="file"] {
+    width:100%; padding:10px; border-radius:10px;
+    border:1px dashed #3a4152; background:#0f1118; color:var(--text);
+  }
 
-    .card {
-      background: var(--panel);
-      border: 1px solid var(--grid);
-      border-radius: 14px;
-      padding: 12px;
-      box-shadow: 0 8px 22px rgba(0,0,0,0.25);
-    }
+  select, input[type="date"], input[type="number"], input[type="text"],
+  input[type="search"], button {
+    width:100%; padding:9px 10px; border-radius:10px;
+    border:1px solid #2e3441; background:#0f1118; color:var(--text); outline:none;
+  }
+  select[multiple] { height:120px; padding:8px; }
 
-    .card h2 {
-      margin: 0 0 10px 0;
-      font-size: 14px;
-      font-weight: 650;
-      color: #f1f1f1;
-    }
+  .row    { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .btnrow { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:10px; }
 
-    label {
-      display: block;
-      font-size: 12px;
-      color: var(--muted);
-      margin: 10px 0 6px;
-    }
+  .pill {
+    display:inline-block; padding:4px 8px; border-radius:999px;
+    border:1px solid #2e3441; background:#0f1118; color:var(--muted);
+    font-size:12px; margin-right:8px; margin-top:8px;
+  }
+  .pill strong { color:var(--text); font-weight:650; }
 
-    input[type="file"] {
-      width: 100%;
-      padding: 10px;
-      border-radius: 10px;
-      border: 1px dashed #3a4152;
-      background: #0f1118;
-      color: var(--text);
-    }
+  button { cursor:pointer; font-weight:650; border:1px solid #33405a; background:rgba(122,162,255,.14); }
+  button.secondary { background:#0f1118; border:1px solid #2e3441; font-weight:600; color:var(--muted); }
+  button:disabled  { opacity:.55; cursor:not-allowed; }
 
-    select, input[type="date"], input[type="number"], input[type="text"], input[type="search"], button {
-      width: 100%;
-      box-sizing: border-box;
-      padding: 9px 10px;
-      border-radius: 10px;
-      border: 1px solid #2e3441;
-      background: #0f1118;
-      color: var(--text);
-      outline: none;
-    }
+  .btnTemplate {
+    display:inline-block; padding:8px 10px; border-radius:10px;
+    border:1px solid #33405a; background:rgba(122,162,255,.14);
+    color:var(--text); font-weight:650; text-decoration:none; line-height:1;
+    font-size:12px; margin-top:15px;
+  }
+  .btnTemplate:hover { border-color:#5b76b8; }
+  .headSub { margin:8px 0 0; font-size:13px; color:var(--muted); }
 
-    select[multiple] {
-      height: 120px;
-      padding: 8px;
-    }
+  .status { margin-top:10px; font-size:12px; color:var(--muted); line-height:1.35; white-space:pre-wrap; }
 
-    .row {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 10px;
-    }
+  .vizgrid { display:grid; grid-template-rows:auto auto; gap:12px; }
+  .viz { position:relative; }
 
-    .pill {
-      display: inline-block;
-      padding: 4px 8px;
-      border-radius: 999px;
-      border: 1px solid #2e3441;
-      background: #0f1118;
-      color: var(--muted);
-      font-size: 12px;
-      margin-right: 8px;
-      margin-top: 8px;
-    }
+  .toolbar { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin:8px 0 0; }
 
-    .btnrow {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 10px;
-      margin-top: 10px;
-    }
+  .svgwrap {
+    width:100%; overflow:auto; border-radius:12px;
+    border:1px solid var(--grid); background:#0a0b11;
+  }
 
-    button {
-      cursor: pointer;
-      font-weight: 650;
-      border: 1px solid #33405a;
-      background: rgba(122,162,255,0.14);
-    }
+  .legend { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:10px; font-size:12px; color:var(--muted); }
 
-    button.secondary {
-      background: #0f1118;
-      border: 1px solid #2e3441;
-      font-weight: 600;
-      color: var(--muted);
-    }
+  .swatch { width:10px; height:10px; border-radius:3px; display:inline-block; border:1px solid #2e3441; margin-right:6px; }
 
-    button:disabled {
-      opacity: 0.55;
-      cursor: not-allowed;
-    }
+  .note { margin-top:8px; font-size:12px; color:var(--muted); line-height:1.35; }
 
-    .btnTemplate{
-  display:inline-block;
-  padding:8px 10px;
-  border-radius:10px;
-  border:1px solid #33405a;
-  background: rgba(122,162,255,0.14);
-  color: var(--text);
-  font-weight:650;
-  text-decoration:none;
-  line-height:1;
+  .kpi { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:10px; }
+  .kpi .box, .stats-kpi .box {
+    border:1px solid var(--grid); border-radius:12px; padding:10px; background:#0f1118;
+  }
+  .kpi .box .big { font-size:18px; font-weight:750; color:#f2f2f2; margin-bottom:4px; }
+  .kpi .box .small, .stats-kpi .box .small { font-size:12px; color:var(--muted); }
 
-  font-size: 12px;
-  margin-top: 15px;
-}
-  .btnTemplate:hover{
-  border-color:#5b76b8;
-    }
-.headSub{
-  margin: 8px 0 0 0;       /* spacing under button */
-  font-size: 13px;
-  color: var(--muted);
-}
-    .status {
-      margin-top: 10px;
-      font-size: 12px;
-      color: var(--muted);
-      line-height: 1.35;
-      white-space: pre-wrap;
-    }
+  .axis text { fill:#aeb6c6; font-size:11px; }
+  .axis path, .axis line { stroke:#2a2f3a; }
+  .grid line { stroke:#1b1f2a; }
 
-    .vizgrid {
-      display: grid;
-      grid-template-rows: auto auto;
-      gap: 12px;
-    }
+  .task { stroke:rgba(0,0,0,.35); stroke-width:1; rx:5; ry:5; }
+  .task:hover { stroke:rgba(255,255,255,.65); stroke-width:1.2; }
 
-    .viz {
-      position: relative;
-    }
+  .tooltip {
+    position:fixed; pointer-events:none; z-index:9999;
+    background:rgba(17,19,26,.96); border:1px solid #2e3441; border-radius:12px;
+    padding:10px; color:#f1f1f1; font-size:12px; max-width:320px;
+    box-shadow:0 12px 30px rgba(0,0,0,.35); opacity:0;
+    transform:translateY(6px); transition:opacity 120ms ease, transform 120ms ease;
+    white-space:pre-wrap;
+  }
+  .tooltip strong { font-weight:750; }
+  #kwTip { white-space:normal; }
 
-    .toolbar {
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-      align-items: center;
-      margin: 8px 0 0 0;
-    }
+  .heatcell { stroke:#151824; stroke-width:1; rx:5; ry:5; }
 
-    .toolbar .pill strong { color: var(--text); font-weight: 650; }
+  .stats-wrap {
+    width:100%; overflow:auto; border-radius:12px;
+    border:1px solid var(--grid); background:#0a0b11; padding:8px;
+  }
+  table.stats-table { width:100%; border-collapse:collapse; font-size:12px; }
+  .stats-table th {
+    text-align:left; padding:8px; border-bottom:1px solid var(--grid);
+    color:#aeb6c6; font-weight:650; position:sticky; top:0; background:#0a0b11; z-index:1;
+  }
+  .stats-table td { padding:8px; border-bottom:1px solid #171b24; color:#e7e7e7; vertical-align:top; }
+  .stats-table td.num, .stats-table th.num { text-align:right; font-variant-numeric:tabular-nums; }
 
-    .svgwrap {
-      width: 100%;
-      overflow: auto;
-      border-radius: 12px;
-      border: 1px solid var(--grid);
-      background: #0a0b11;
-    }
+  .stats-kpi { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin-bottom:10px; }
+  .stats-kpi .box .big { font-size:16px; font-weight:750; color:#f2f2f2; margin-bottom:4px; }
 
-    .legend {
-      display: flex;
-      gap: 10px;
-      align-items: center;
-      flex-wrap: wrap;
-      margin-top: 10px;
-      font-size: 12px;
-      color: var(--muted);
-    }
-
-    .swatch {
-      width: 10px;
-      height: 10px;
-      border-radius: 3px;
-      display: inline-block;
-      border: 1px solid #2e3441;
-      margin-right: 6px;
-    }
-
-    .note {
-      margin-top: 8px;
-      font-size: 12px;
-      color: var(--muted);
-      line-height: 1.35;
-    }
-
-    .kpi {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 10px;
-      margin-top: 10px;
-    }
-
-    .kpi .box {
-      border: 1px solid var(--grid);
-      border-radius: 12px;
-      padding: 10px;
-      background: #0f1118;
-    }
-
-    .kpi .box .big {
-      font-size: 18px;
-      font-weight: 750;
-      color: #f2f2f2;
-      margin-bottom: 4px;
-    }
-
-    .kpi .box .small {
-      font-size: 12px;
-      color: var(--muted);
-    }
-
-    .axis text { fill: #aeb6c6; font-size: 11px; }
-    .axis path, .axis line { stroke: #2a2f3a; }
-
-    .grid line { stroke: #1b1f2a; }
-
-    .task {
-      stroke: rgba(0,0,0,0.35);
-      stroke-width: 1;
-      rx: 5;
-      ry: 5;
-    }
-
-
-    .task:hover { stroke: rgba(255,255,255,0.65); stroke-width: 1.2; }
-
-    .tooltip {
-      position: fixed;
-      pointer-events: none;
-      z-index: 9999;
-      background: rgba(17,19,26,0.96);
-      border: 1px solid #2e3441;
-      border-radius: 12px;
-      padding: 10px;
-      color: #f1f1f1;
-      font-size: 12px;
-      max-width: 320px;
-      box-shadow: 0 12px 30px rgba(0,0,0,0.35);
-      opacity: 0;
-      transform: translateY(6px);
-      transition: opacity 120ms ease, transform 120ms ease;
-      white-space: pre-wrap;
-    }
-
-    .tooltip strong { font-weight: 750; }
-
-    
-    /* Overlap timeline tooltip uses HTML; avoid pre-wrap whitespace gaps */
-    #kwTip { white-space: normal; }
-.heatcell {
-      stroke: #151824;
-      stroke-width: 1;
-      rx: 5;
-      ry: 5;
-    }
-  
-    .stats-wrap {
-      width: 100%;
-      overflow: auto;
-      border-radius: 12px;
-      border: 1px solid var(--grid);
-      background: #0a0b11;
-      padding: 8px;
-    }
-
-    table.stats-table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 12px;
-    }
-
-    .stats-table th {
-      text-align: left;
-      padding: 8px;
-      border-bottom: 1px solid var(--grid);
-      color: #aeb6c6;
-      font-weight: 650;
-      position: sticky;
-      top: 0;
-      background: #0a0b11;
-      z-index: 1;
-    }
-
-    .stats-table td {
-      padding: 8px;
-      border-bottom: 1px solid #171b24;
-      color: #e7e7e7;
-      vertical-align: top;
-    }
-
-    .stats-table td.num,
-    .stats-table th.num {
-      text-align: right;
-      font-variant-numeric: tabular-nums;
-    }
-
-    .stats-kpi {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 10px;
-      margin-bottom: 10px;
-    }
-
-    .stats-kpi .box {
-      border: 1px solid var(--grid);
-      border-radius: 12px;
-      padding: 10px;
-      background: #0f1118;
-    }
-
-    .stats-kpi .box .big {
-      font-size: 16px;
-      font-weight: 750;
-      color: #f2f2f2;
-      margin-bottom: 4px;
-    }
-
-    .stats-kpi .box .small {
-      font-size: 12px;
-      color: var(--muted);
-    }
-
-
-    .courseHeader { pointer-events: none; }
+  .courseHeader { pointer-events:none; }
 </style>
 </head>
 
 <body>
 <header>
   <h1>B-made planning dashboard</h1>
-
-  <a class="btnTemplate" href="./NEW-Template-20260226-V3.xlsx" download="bmade-template.xlsx">
-    Download template
-  </a>
-
-  <p class="headSub">
-    Load Excel sheets to visualise workload, overlaps, and severity.
-  </p>
+  <a class="btnTemplate" href="./NEW-Template-20260226-V3.xlsx" download="bmade-template.xlsx">Download template</a>
+  <p class="headSub">Load Excel sheets to visualise workload, overlaps, and severity.</p>
 </header>
 
 <div class="wrap">
@@ -404,14 +151,8 @@
     <input id="file" type="file" multiple accept=".xlsx,.xls" />
 
     <div class="kpi">
-      <div class="box">
-        <div class="big" id="kpiTasks">0</div>
-        <div class="small">Tasks loaded</div>
-      </div>
-      <div class="box">
-        <div class="big" id="kpiCourses">0</div>
-        <div class="small">Courses (sheets)</div>
-      </div>
+      <div class="box"><div class="big" id="kpiTasks">0</div><div class="small">Tasks loaded</div></div>
+      <div class="box"><div class="big" id="kpiCourses">0</div><div class="small">Courses (sheets)</div></div>
     </div>
 
     <div class="status" id="status">No file loaded.</div>
@@ -436,13 +177,10 @@
       <option value="cohort">Full cohort size (worst case)</option>
     </select>
 
-
     <div class="row">
       <div>
         <label>Year group</label>
-        <select id="filterYear">
-          <option value="">All</option>
-        </select>
+        <select id="filterYear"><option value="">All</option></select>
       </div>
       <div>
         <label>Student bucket</label>
@@ -460,43 +198,30 @@
       <div>
         <label>Likelihood minimum (1 to 3)</label>
         <select id="filterLikemin">
-          <option value="1">1</option>
-          <option value="2">2</option>
-          <option value="3">3</option>
+          <option value="1">1</option><option value="2">2</option><option value="3">3</option>
         </select>
       </div>
       <div>
         <label>Likelihood maximum (1 to 3)</label>
         <select id="filterLikemax">
-          <option value="1">1</option>
-          <option value="2">2</option>
-          <option value="3" selected>3</option>
+          <option value="1">1</option><option value="2">2</option><option value="3" selected>3</option>
         </select>
       </div>
     </div>
 
     <div class="row">
-      <div>
-        <label>Date from</label>
-        <input id="filterFrom" type="date" />
-      </div>
-      <div>
-        <label>Date to</label>
-        <input id="filterTo" type="date" />
-      </div>
+      <div><label>Date from</label><input id="filterFrom" type="date" /></div>
+      <div><label>Date to</label><input id="filterTo" type="date" /></div>
     </div>
-
 
     <label>Keyword overlap window (days)</label>
     <input id="overlapWindow" type="number" min="0" step="1" value="14" />
     <div class="note">Used in the Keyword overlaps section below. Overlap is detected if two tasks share a keyword and their date ranges are within this window.</div>
 
-
     <div class="btnrow">
       <button id="apply" disabled>Apply filters</button>
       <button id="reset" class="secondary" disabled>Reset</button>
     </div>
-
     <div class="btnrow">
       <button id="exportGantt" class="secondary" disabled>Export Gantt as PNG</button>
       <button id="exportHeat" class="secondary" disabled>Export severity chart as PNG</button>
@@ -504,15 +229,11 @@
 
     <div class="note">
       <div class="legend">
-        <span><span class="swatch" style="background:rgba(122,162,255,0.70)"></span>Likelihood 1</span>
-        <span><span class="swatch" style="background:rgba(255,184,107,0.70)"></span>Likelihood 2</span>
-        <span><span class="swatch" style="background:rgba(255,107,107,0.72)"></span>Likelihood 3</span>
+        <span><span class="swatch" style="background:rgba(122,162,255,.70)"></span>Likelihood 1</span>
+        <span><span class="swatch" style="background:rgba(255,184,107,.70)"></span>Likelihood 2</span>
+        <span><span class="swatch" style="background:rgba(255,107,107,.72)"></span>Likelihood 3</span>
       </div>
-      <div class="note">
-        Severity weighting:
-        Cohort size is bucketed as 1-10 → 1, 11-20 → 2, 21-30 → 3, 31+ → 4.
-        Severity per task day = likelihood × bucket weight.
-      </div>
+      <div class="note">Severity weighting: Cohort size is bucketed as 1-10 → 1, 11-20 → 2, 21-30 → 3, 31+ → 4. Severity per task day = likelihood × bucket weight.</div>
     </div>
   </div>
 
@@ -520,68 +241,46 @@
     <div class="card viz">
       <h2>Gantt chart</h2>
       <div class="toolbar" id="ganttMeta"></div>
-      <div class="svgwrap">
-        <svg id="gantt" width="1400" height="620"></svg>
-      </div>
+      <div class="svgwrap"><svg id="gantt" width="1400" height="620"></svg></div>
       <div class="note">Tip: scroll horizontally for longer timelines. Hover tasks for details.</div>
     </div>
 
     <div class="card viz">
       <h2>Severity line graph (weekly)</h2>
       <div class="toolbar" id="heatMeta"></div>
-      <div class="svgwrap">
-        <svg id="heat" width="1400" height="520"></svg>
-      </div>
+      <div class="svgwrap"><svg id="heat" width="1400" height="520"></svg></div>
       <div class="note">Line graph shows weekly total severity per course (sheet).</div>
 
       <h2 style="margin-top:14px;">Severity heat map (weekly blocks)</h2>
-      <div class="svgwrap">
-        <svg id="heatBlocks" width="1400" height="360"></svg>
-      </div>
+      <div class="svgwrap"><svg id="heatBlocks" width="1400" height="360"></svg></div>
       <div class="note">Blocks show weekly severity totals (darker = busier). Scroll to see all courses or weeks.</div>
 
       <h2 style="margin-top:14px;">Total severity curve (all programmes)</h2>
-      <div class="svgwrap">
-        <svg id="totalCurve" width="1400" height="260"></svg>
-      </div>
+      <div class="svgwrap"><svg id="totalCurve" width="1400" height="260"></svg></div>
       <div class="note">Single curve that sums weekly severity across all programmes, using the current filters.</div>
 
       <h2 style="margin-top:14px;">Weekly severity by task type (stacked)</h2>
-      <div class="svgwrap">
-        <svg id="typeStack" width="1400" height="360"></svg>
-      </div>
+      <div class="svgwrap"><svg id="typeStack" width="1400" height="360"></svg></div>
       <div class="note">Stacked chart shows weekly severity split by task type (all programmes combined).</div>
 
       <h2 style="margin-top:14px;">Severity curves by location</h2>
-      <div class="svgwrap">
-        <svg id="locationCurves" width="1400" height="360"></svg>
-      </div>
+      <div class="svgwrap"><svg id="locationCurves" width="1400" height="360"></svg></div>
       <div class="note">Weekly severity summed by location (top locations shown; remainder grouped as Other).</div>
 
       <h2 style="margin-top:14px;">Keywords</h2>
-      <div class="svgwrap">
-        <svg id="themeBars" width="1400" height="320"></svg>
-      </div>
+      <div class="svgwrap"><svg id="themeBars" width="1400" height="320"></svg></div>
       <div class="note">Top themes ranked by total severity (severity per day × task days). If a task has multiple themes, its severity contributes to each theme.</div>
 
       <h2 style="margin-top:14px;">Theme trends (weekly)</h2>
-      <div class="svgwrap">
-        <svg id="themeTrends" width="1400" height="360"></svg>
-      </div>
+      <div class="svgwrap"><svg id="themeTrends" width="1400" height="360"></svg></div>
       <div class="note">Weekly severity curves for the busiest themes (top themes by total severity).</div>
-
 
       <h2 style="margin-top:14px;">Keyword overlaps</h2>
       <div class="toolbar" id="keywordMeta"></div>
       <div id="keywordOverlapBody" class="stats-wrap"></div>
-      <div class="svgwrap" style="margin-top:10px;">
-        <svg id="keywordOverlapViz" width="1400" height="520"></svg>
-      </div>
+      <div class="svgwrap" style="margin-top:10px;"><svg id="keywordOverlapViz" width="1400" height="520"></svg></div>
       <div class="note">Timeline view: each dot is an overlap cluster (same keyword across ≥2 programmes). Dot size indicates number of programmes; hover for details.</div>
       <div class="note">Shows clusters where two or more programmes share the same keyword within the chosen time window.</div>
-
-
-
     </div>
 
     <div class="card viz">
@@ -593,63 +292,37 @@
   </div>
 </div>
 
-<!-- Global tooltip (position: fixed) so it works across all charts -->
 <div class="tooltip" id="tooltip"></div>
 
 <script>
 (() => {
   const DateTime = luxon.DateTime;
 
-  // --- column name normalisation ---
-  function normKey(s) {
-    return String(s || "")
-      .trim()
-      .toLowerCase()
-      .replace(/\s+/g, " ")
-      .replace(/[\u2013\u2014]/g, "-");
-  }
+  // ── Column-name normalisation ───────────────────────────────────────────────
+  const normKey = s => String(s||"").trim().toLowerCase().replace(/\s+/g," ").replace(/[\u2013\u2014]/g,"-");
 
-  // Accepts minor variations in headings
-const COLMAP = {
-  module: ["module", "module name", "module title", "modulename"],
-  year: ["year", "year group", "yeargroup"],
-  type: ["task", "type of task", "task type", "type", "activity type"],
-  likelihood: [
-    "likelihood of b-made input expected",
-    "a measure of likelihood of input needed (from 1 to 3)",
-    "likelihood",
-    "input likelihood",
-    "likelihood of input needed"
-  ],
-
-  // Cohort sizing (supports both legacy bucket-style sheets and the newer template)
-  cohort: ["overall cohort size", "cohort size", "estimated cohort size", "total cohort size", "group size"],
-  expectedPercent: ["percentage of students expected", "% expected", "percent expected", "expected %", "expected percentage"],
-  expectedStudents: ["student # expected", "students expected", "expected students", "expected student number", "student number expected"],
-
-  // Legacy single sizing column (often already bucketed) – kept for backwards compatibility
-  students: [
-    "level of b-made input expected",
-    "a measure of number of students (1-10, 10-20, 21-30, 31+)",
-    "number of students",
-    "students",
-    "student bucket"
-  ],
-
-  start: ["activity start", "date of activity start", "activity start date", "start date", "date start"],
-  finish: ["activity end", "date of activity finish", "activity end date", "finish date", "end date", "date finish"],
-  status: ["tentative or known?", "known or tentative", "status"],
-  location: ["location", "site", "room", "space", "campus"],
-  themes: ["themes", "keywords", "key themes", "academic themes", "theme", "tags"],
-  keyword: ["keyword", "keywords", "key word", "tags", "tag"]
-};
+  const COLMAP = {
+    module:          ["module","module name","module title","modulename"],
+    year:            ["year","year group","yeargroup"],
+    type:            ["task","type of task","task type","type","activity type"],
+    likelihood:      ["likelihood of b-made input expected","a measure of likelihood of input needed (from 1 to 3)","likelihood","input likelihood","likelihood of input needed"],
+    cohort:          ["overall cohort size","cohort size","estimated cohort size","total cohort size","group size"],
+    expectedPercent: ["percentage of students expected","% expected","percent expected","expected %","expected percentage"],
+    expectedStudents:["student # expected","students expected","expected students","expected student number","student number expected"],
+    students:        ["level of b-made input expected","a measure of number of students (1-10, 10-20, 21-30, 31+)","number of students","students","student bucket"],
+    start:           ["activity start","date of activity start","activity start date","start date","date start"],
+    finish:          ["activity end","date of activity finish","activity end date","finish date","end date","date finish"],
+    status:          ["tentative or known?","known or tentative","status"],
+    location:        ["location","site","room","space","campus"],
+    themes:          ["themes","keywords","key themes","academic themes","theme","tags"],
+    keyword:         ["keyword","keywords","key word","tags","tag"]
+  };
 
   function findCol(headers, wantList) {
     for (const want of wantList) {
       const idx = headers.findIndex(h => normKey(h) === normKey(want));
       if (idx >= 0) return idx;
     }
-    // fallback: fuzzy contains
     for (let i = 0; i < headers.length; i++) {
       const h = normKey(headers[i]);
       for (const want of wantList) {
@@ -660,57 +333,60 @@ const COLMAP = {
     return -1;
   }
 
+  // ── Date helpers ────────────────────────────────────────────────────────────
   function excelDateToISO(v) {
-    // v may be a Date, a number serial, or a string.
     if (v == null || v === "") return null;
-
     if (v instanceof Date) {
-      const dt = DateTime.fromJSDate(v, { zone: "utc" });
+      const dt = DateTime.fromJSDate(v, {zone:"utc"});
       return dt.isValid ? dt.toISODate() : null;
     }
-
     if (typeof v === "number") {
-      // Excel serial date (SheetJS uses 1900-based)
-      const parsed = XLSX.SSF.parse_date_code(v);
-      if (!parsed) return null;
-      const dt = DateTime.utc(parsed.y, parsed.m, parsed.d);
+      const p = XLSX.SSF.parse_date_code(v);
+      if (!p) return null;
+      const dt = DateTime.utc(p.y, p.m, p.d);
       return dt.isValid ? dt.toISODate() : null;
     }
-
     const s = String(v).trim();
-    // Try ISO first
-    let dt = DateTime.fromISO(s, { zone: "utc" });
+    let dt = DateTime.fromISO(s, {zone:"utc"});
     if (dt.isValid) return dt.toISODate();
-
-    // Try common UK formats
-    const formats = ["d/M/yyyy", "dd/MM/yyyy", "d/M/yy", "dd/MM/yy", "d-M-yyyy", "dd-MM-yyyy"];
-    for (const f of formats) {
-      dt = DateTime.fromFormat(s, f, { zone: "utc" });
+    for (const f of ["d/M/yyyy","dd/MM/yyyy","d/M/yy","dd/MM/yy","d-M-yyyy","dd-MM-yyyy"]) {
+      dt = DateTime.fromFormat(s, f, {zone:"utc"});
       if (dt.isValid) return dt.toISODate();
     }
     return null;
   }
 
-  function clampInt(x, lo, hi) {
-    const n = Number(x);
-    if (!Number.isFinite(n)) return null;
-    return Math.max(lo, Math.min(hi, Math.round(n)));
+  function isoToJSDate(iso) { return DateTime.fromISO(iso, {zone:"utc"}).toJSDate(); }
+
+  function startOfISOWeek(dt) {
+    return dt.minus({days: dt.weekday - 1}).startOf("day");
   }
 
+  function buildWeeks(minISO, maxISO) {
+    const weeks = [];
+    for (let d = startOfISOWeek(DateTime.fromISO(minISO,{zone:"utc"}));
+         d <= startOfISOWeek(DateTime.fromISO(maxISO,{zone:"utc"}));
+         d = d.plus({weeks:1})) {
+      weeks.push(d.toISODate());
+    }
+    return weeks;
+  }
+
+  // ── Student sizing helpers ──────────────────────────────────────────────────
+  const clampInt = (x, lo, hi) => {
+    const n = Number(x);
+    return Number.isFinite(n) ? Math.max(lo, Math.min(hi, Math.round(n))) : null;
+  };
+
   function parseStudentCount(v) {
-    // Accepts: number, "32", "32 students", "1-10", "11-20", "21-30", "31+"
     if (v == null || v === "") return null;
     if (typeof v === "number" && Number.isFinite(v)) return Math.max(0, Math.round(v));
-
     const s = String(v).trim();
     if (!s) return null;
-
-    // If a bucket string was provided, return a representative count so bucketing works
-    if (s === "1-10") return 10;
+    if (s === "1-10")  return 10;
     if (s === "10-20") return 20;
     if (s === "21-30") return 30;
-    if (s === "31+") return 31;
-
+    if (s === "31+")   return 31;
     const m = s.match(/(\d+)/);
     if (!m) return null;
     const n = Number(m[1]);
@@ -718,169 +394,173 @@ const COLMAP = {
   }
 
   function bucketFromCount(n) {
-  const x = Number(n);
-  if (!Number.isFinite(x)) return "";
-
-  if (x <= 10) return "1-10";
-  if (x <= 20) return "11-20";
-  if (x <= 30) return "21-30";
-  return "31+";
-}
-
-function studentWeight(v) {
-
-  // If a number comes in, convert it to a bucket first
-  if (typeof v === "number" && Number.isFinite(v)) {
-    return studentWeight(bucketFromCount(v));
+    const x = Number(n);
+    if (!Number.isFinite(x)) return "";
+    if (x <= 10) return "1-10";
+    if (x <= 20) return "11-20";
+    if (x <= 30) return "21-30";
+    return "31+";
   }
 
-  const b = String(v || "").trim();
-
-  if (b === "1-10") return 1;
-  if (b === "11-20") return 2;
-  if (b === "21-30") return 3;
-  if (b === "31+") return 4;
-
-  return 1; // safe fallback
-}
+  function studentWeight(v) {
+    if (typeof v === "number" && Number.isFinite(v)) return studentWeight(bucketFromCount(v));
+    const b = String(v||"").trim();
+    if (b === "1-10")  return 1;
+    if (b === "11-20") return 2;
+    if (b === "21-30") return 3;
+    if (b === "31+")   return 4;
+    return 1;
+  }
 
   function computeModeFields(task, mode) {
     const m = mode || "expected";
-    const cohort = (task.cohortSize != null) ? task.cohortSize : task.studentsCount;
-    const expected = (task.expectedStudents != null) ? task.expectedStudents : task.studentsCount;
-
-    const count = (m === "cohort") ? cohort : expected;
+    const count = m === "cohort"
+      ? (task.cohortSize ?? task.studentsCount)
+      : (task.expectedStudents ?? task.studentsCount);
     task.modeStudentsCount = (count != null && Number.isFinite(Number(count))) ? Number(count) : null;
-    task.modeStudentsBucket = (task.modeStudentsCount != null) ? bucketFromCount(task.modeStudentsCount) : (task.studentsBucket || "");
-    task.severityPerDay = (task.likelihood || 0) * studentWeight(task.modeStudentsCount != null ? task.modeStudentsCount : task.modeStudentsBucket);
+    task.modeStudentsBucket = task.modeStudentsCount != null ? bucketFromCount(task.modeStudentsCount) : (task.studentsBucket || "");
+    task.severityPerDay = (task.likelihood || 0) * studentWeight(task.modeStudentsCount ?? task.modeStudentsBucket);
     task.mode = m;
   }
 
-
   function parseThemes(v) {
-    const raw = String(v || "").trim();
+    const raw = String(v||"").trim();
     if (!raw) return [];
-    // split on commas, semicolons, pipes, and new lines
-    const parts = raw.split(/[\n\r,;|]+/g).map(s => s.trim()).filter(Boolean);
-    // de-duplicate while preserving order
     const seen = new Set();
-    const out = [];
-    for (const t of parts) {
-      const key = t.toLowerCase();
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push(t);
+    return raw.split(/[\n\r,;|]+/g).map(s => s.trim()).filter(s => {
+      if (!s || seen.has(s.toLowerCase())) return false;
+      seen.add(s.toLowerCase());
+      return true;
+    });
+  }
+
+  const likelihoodColour = lik =>
+    lik === 1 ? "rgba(122,162,255,.70)" :
+    lik === 2 ? "rgba(255,184,107,.70)" :
+                "rgba(255,107,107,.72)";
+
+  // ── Shared: aggregate severity by (key + week) ──────────────────────────────
+  // Returns a Map: `${key}||${weekISO}` -> totalSeverity
+  function aggregateWeekly(tasks, keyFn) {
+    const totals = new Map();
+    for (const t of tasks) {
+      const s = DateTime.fromISO(t.startISO, {zone:"utc"}).startOf("day");
+      const f = DateTime.fromISO(t.finishISO, {zone:"utc"}).startOf("day");
+      if (!s.isValid || !f.isValid) continue;
+      for (let d = s; d <= f; d = d.plus({days:1})) {
+        const k = `${keyFn(t)}||${startOfISOWeek(d).toISODate()}`;
+        totals.set(k, (totals.get(k)||0) + (t.severityPerDay||0));
+      }
     }
-    return out;
+    return totals;
   }
 
-  function likelihoodColour(lik) {
-    if (lik === 1) return "rgba(122,162,255,0.70)";
-    if (lik === 2) return "rgba(255,184,107,0.70)";
-    return "rgba(255,107,107,0.72)";
+  // ── Shared chart scaffolding helpers ───────────────────────────────────────
+  function addGridAndAxes(g, x, y, innerW, innerH, xTicks, yTicks, xFmt) {
+    g.append("g").attr("class","grid")
+      .call(d3.axisLeft(y).ticks(yTicks).tickSize(-innerW).tickFormat(()=>""));
+    const xAxisG = g.append("g").attr("class","axis")
+      .attr("transform",`translate(0,${innerH})`)
+      .call(d3.axisBottom(x).ticks(xTicks).tickFormat(xFmt || d3.timeFormat("%d %b")));
+    angleXAxis(xAxisG);
+    g.append("g").attr("class","axis").call(d3.axisLeft(y).ticks(yTicks));
+    return xAxisG;
   }
 
-  // --- state ---
-  let allTasks = [];
-  let filteredTasks = [];
+  // Shared right-side legend (rect + text items)
+  function addRightLegend(svg, title, items, colourFn, margin, innerW) {
+    const leg = svg.append("g").attr("transform",`translate(${margin.left+innerW+14},${margin.top})`);
+    leg.append("text").attr("x",0).attr("y",0).attr("fill","#aeb6c6").attr("font-size",12).text(title);
+    const g = leg.selectAll("g.item").data(items).enter().append("g")
+      .attr("class","item").attr("transform",(d,i)=>`translate(0,${16+i*16})`);
+    g.append("rect").attr("x",0).attr("y",-10).attr("width",10).attr("height",10)
+      .attr("rx",3).attr("ry",3).attr("fill",colourFn);
+    g.append("text").attr("x",16).attr("y",-2).attr("fill","#aeb6c6").attr("font-size",11).text(d=>d);
+  }
 
-  // --- dom ---
-  const elFile = document.getElementById("file");
-  const elStatus = document.getElementById("status");
-  const elApply = document.getElementById("apply");
-  const elReset = document.getElementById("reset");
+  // Shared: draw lines + hover dots
+  function addLinesAndDots(g, x, y, series, valKey, colourFn, onHover) {
+    const line = d3.line().x(d=>x(d.date)).y(d=>y(d[valKey]||d.value||0)).curve(d3.curveMonotoneX);
+    const linesG = g.append("g");
+    linesG.selectAll("path").data(series).enter().append("path")
+      .attr("fill","none").attr("stroke-width",2).attr("stroke",colourFn)
+      .attr("d", s => line(s.values));
+    linesG.selectAll("g.points").data(series).enter().append("g").attr("class","points")
+      .selectAll("circle").data(s => s.values.map(v=>({...v, _key: s._key||s.course||s.loc||s.theme})))
+      .enter().append("circle")
+      .attr("cx",d=>x(d.date)).attr("cy",d=>y(d[valKey]||d.value||0)).attr("r",3)
+      .attr("fill",d=>colourFn(d))
+      .on("mousemove", onHover).on("mouseleave", hideTooltip);
+  }
 
-  const elCourse = document.getElementById("filterCourse");
-  const elType = document.getElementById("filterType");
-  const elLocation = document.getElementById("filterLocation");
-  const elSearchBox = document.getElementById("searchBox");
-  const elSeverityMode = document.getElementById("severityMode");
-  const elYear = document.getElementById("filterYear");
-  const elStudents = document.getElementById("filterStudents");
-  const elLikemin = document.getElementById("filterLikemin");
-  const elLikemax = document.getElementById("filterLikemax");
-  const elFrom = document.getElementById("filterFrom");
-  const elTo = document.getElementById("filterTo");
-  const elOverlapWindow = document.getElementById("overlapWindow");
+  // ── State & DOM ─────────────────────────────────────────────────────────────
+  let allTasks = [], filteredTasks = [];
 
-  const kpiTasks = document.getElementById("kpiTasks");
-  const kpiCourses = document.getElementById("kpiCourses");
-
+  const $ = id => document.getElementById(id);
+  const elFile       = $("file");
+  const elStatus     = $("status");
+  const elApply      = $("apply");
+  const elReset      = $("reset");
+  const elCourse     = $("filterCourse");
+  const elType       = $("filterType");
+  const elLocation   = $("filterLocation");
+  const elSearchBox  = $("searchBox");
+  const elSeverityMode = $("severityMode");
+  const elYear       = $("filterYear");
+  const elStudents   = $("filterStudents");
+  const elLikemin    = $("filterLikemin");
+  const elLikemax    = $("filterLikemax");
+  const elFrom       = $("filterFrom");
+  const elTo         = $("filterTo");
+  const elOverlapWindow = $("overlapWindow");
+  const kpiTasks     = $("kpiTasks");
+  const kpiCourses   = $("kpiCourses");
+  const ganttMeta    = $("ganttMeta");
+  const heatMeta     = $("heatMeta");
+  const statsMeta    = $("statsMeta");
+  const elExportGantt = $("exportGantt");
+  const elExportHeat  = $("exportHeat");
+  const tooltip       = $("tooltip");
   const svgG = d3.select("#gantt");
   const svgH = d3.select("#heat");
 
-  const ganttMeta = document.getElementById("ganttMeta");
-  const heatMeta = document.getElementById("heatMeta");
-  const statsMeta = document.getElementById("statsMeta");
-
-  const elExportGantt = document.getElementById("exportGantt");
-  const elExportHeat = document.getElementById("exportHeat");
-
-  const tooltip = document.getElementById("tooltip");
-
-  function setStatus(msg) {
-    elStatus.textContent = msg;
-  }
-
-  function setEnabled(yes) {
-    elApply.disabled = !yes;
-    elReset.disabled = !yes;
-    elExportGantt.disabled = !yes;
-    elExportHeat.disabled = !yes;
-  }
+  const setStatus  = msg => { elStatus.textContent = msg; };
+  const setEnabled = yes => {
+    [elApply, elReset, elExportGantt, elExportHeat].forEach(el => el.disabled = !yes);
+  };
 
   function fillSelectMultiple(select, values) {
     select.innerHTML = "";
     for (const v of values) {
       const opt = document.createElement("option");
-      opt.value = v;
-      opt.textContent = v;
+      opt.value = opt.textContent = v;
       opt.selected = true;
       select.appendChild(opt);
     }
   }
 
-  function selectedValues(select) {
-    return Array.from(select.options).filter(o => o.selected).map(o => o.value);
-  }
+  const selectedValues = select => Array.from(select.options).filter(o=>o.selected).map(o=>o.value);
 
   function uniqueSorted(arr) {
     return Array.from(new Set(arr.filter(v => v != null && String(v).trim() !== "")))
-      .map(v => String(v))
-      .sort((a, b) => a.localeCompare(b, "en-GB", { numeric: true }));
+      .map(v => String(v)).sort((a,b) => a.localeCompare(b,"en-GB",{numeric:true}));
   }
 
-  // Some newer Excel templates carry formatting down to row 1,048,576.
-  // If we trust sheet["!ref"], SheetJS can attempt to materialise a huge blank matrix.
-  // Instead, derive an effective used range from *actual populated cells*.
-  function getEffectiveSheetRange(sheet, maxScanCells = 200000) {
-    // Returns a SheetJS range object ({s:{r,c}, e:{r,c}}) or null.
-    // maxScanCells is a safety valve for pathological sheets.
-    const keys = Object.keys(sheet || {});
-    let seen = 0;
-    let minR = Infinity, minC = Infinity, maxR = -1, maxC = -1;
-
+  // ── Sheet parsing ───────────────────────────────────────────────────────────
+  function getEffectiveSheetRange(sheet, maxScanCells=200000) {
+    const keys = Object.keys(sheet||{});
+    let seen=0, minR=Infinity, minC=Infinity, maxR=-1, maxC=-1;
     for (const k of keys) {
-      if (k[0] === '!') continue;
-      // Cell addresses look like "A1", "BC23".
-      if (!/^[A-Z]+\d+$/.test(k)) continue;
+      if (k[0]==="!" || !/^[A-Z]+\d+$/.test(k)) continue;
       const cell = sheet[k];
-      // Only count truly populated cells. (Avoid style-only artefacts.)
-      if (!cell || cell.v == null || String(cell.v).trim() === "") continue;
+      if (!cell || cell.v==null || String(cell.v).trim()==="") continue;
       const rc = XLSX.utils.decode_cell(k);
-      minR = Math.min(minR, rc.r);
-      minC = Math.min(minC, rc.c);
-      maxR = Math.max(maxR, rc.r);
-      maxC = Math.max(maxC, rc.c);
-      seen++;
-      if (seen >= maxScanCells) break;
+      if (rc.r < minR) minR = rc.r; if (rc.r > maxR) maxR = rc.r;
+      if (rc.c < minC) minC = rc.c; if (rc.c > maxC) maxC = rc.c;
+      if (++seen >= maxScanCells) break;
     }
-
-    if (maxR < 0 || maxC < 0) return null;
-    // Ensure header row is included
-    minR = Math.min(minR, 0);
-    minC = Math.min(minC, 0);
-    return { s: { r: minR, c: minC }, e: { r: maxR, c: maxC } };
+    if (maxR < 0) return null;
+    return { s:{r:Math.min(minR,0), c:Math.min(minC,0)}, e:{r:maxR, c:maxC} };
   }
 
   function parseWorkbookToTasks(workbook, fileName) {
@@ -888,234 +568,145 @@ function studentWeight(v) {
     for (const sheetName of workbook.SheetNames) {
       const sheet = workbook.Sheets[sheetName];
       if (!sheet) continue;
-
-      const effRange = getEffectiveSheetRange(sheet);
-      // Use blankrows:false to avoid including empty rows inside the effective range.
       const rows = XLSX.utils.sheet_to_json(sheet, {
-        header: 1,
-        raw: true,
-        blankrows: false,
-        range: effRange || undefined
+        header:1, raw:true, blankrows:false, range: getEffectiveSheetRange(sheet)||undefined
       });
       if (!rows || rows.length < 2) continue;
 
-      // Trim header row and drop trailing empty columns
-      const headersRaw = rows[0].map(h => String(h || "").trim());
-      let lastHeaderIdx = headersRaw.length - 1;
-      while (lastHeaderIdx >= 0 && (!headersRaw[lastHeaderIdx] || headersRaw[lastHeaderIdx].trim() === "")) {
-        lastHeaderIdx--;
-      }
-      const headers = headersRaw.slice(0, lastHeaderIdx + 1);
-      const idxModule = findCol(headers, COLMAP.module);
-      const idxYear = findCol(headers, COLMAP.year);
-      const idxType = findCol(headers, COLMAP.type);
-      const idxLike = findCol(headers, COLMAP.likelihood);
-      const idxCohort = findCol(headers, COLMAP.cohort);
-      const idxExpPct = findCol(headers, COLMAP.expectedPercent);
-      const idxExpStud = findCol(headers, COLMAP.expectedStudents);
-      const idxStud = findCol(headers, COLMAP.students);
-      const idxStart = findCol(headers, COLMAP.start);
-      const idxFin = findCol(headers, COLMAP.finish);
-      const idxStatus = findCol(headers, COLMAP.status);
-      const idxLoc = findCol(headers, COLMAP.location);
-      const idxThemes = findCol(headers, COLMAP.themes);
-      const idxKeyword = findCol(headers, COLMAP.keyword);
+      const headersRaw = rows[0].map(h=>String(h||"").trim());
+      let lastH = headersRaw.length-1;
+      while (lastH >= 0 && (!headersRaw[lastH]||headersRaw[lastH].trim()==="")) lastH--;
+      const headers = headersRaw.slice(0, lastH+1);
 
-      const required = [idxModule, idxYear, idxType, idxLike, idxStart, idxFin];
-      const hasSizing = (idxCohort >= 0) || (idxStud >= 0) || (idxExpStud >= 0) || (idxExpPct >= 0);
-      if (required.some(i => i < 0) || !hasSizing) {
-        // skip sheets without the needed structure
-        continue;
-      }
+      const idx = {};
+      for (const [k,v] of Object.entries(COLMAP)) idx[k] = findCol(headers, v);
 
-      for (let r = 1; r < rows.length; r++) {
+      const hasSizing = idx.cohort>=0 || idx.students>=0 || idx.expectedStudents>=0 || idx.expectedPercent>=0;
+      if ([idx.module,idx.year,idx.type,idx.likelihood,idx.start,idx.finish].some(i=>i<0) || !hasSizing) continue;
+
+      for (let r=1; r<rows.length; r++) {
         const row = rows[r];
-        if (!row || row.length === 0) continue;
+        if (!row || row.length===0) continue;
 
-        const moduleName = String(row[idxModule] || "").trim();
-        const yearGroup = clampInt(row[idxYear], 1, 9); // architecture years vary, keep generous
-        const type = String(row[idxType] || "").trim();
-        // Newer templates allow 0 (none) → 3 (definite)
-        const likelihood = clampInt(row[idxLike], 0, 3);
-                const cohortRaw = (idxCohort >= 0) ? row[idxCohort] : null;
-        let cohortSize = parseStudentCount(cohortRaw);
+        const moduleName  = String(row[idx.module]||"").trim();
+        const yearGroup   = clampInt(row[idx.year], 1, 9);
+        const type        = String(row[idx.type]||"").trim();
+        const likelihood  = clampInt(row[idx.likelihood], 0, 3);
 
-        // Expected students can be supplied directly, or derived from cohort size × expected percentage
-        const expStudRaw = (idxExpStud >= 0) ? row[idxExpStud] : null;
-        let expectedStudents = parseStudentCount(expStudRaw);
+        let cohortSize = parseStudentCount(idx.cohort>=0 ? row[idx.cohort] : null);
+        let expectedStudents = parseStudentCount(idx.expectedStudents>=0 ? row[idx.expectedStudents] : null);
 
         let expectedPercent = null;
-        if (idxExpPct >= 0) {
-          const v = row[idxExpPct];
-          if (typeof v === "number" && Number.isFinite(v)) {
+        if (idx.expectedPercent >= 0) {
+          const v = row[idx.expectedPercent];
+          if (typeof v==="number" && Number.isFinite(v)) {
             expectedPercent = v;
           } else {
-            const s = String(v || "").trim();
-            const m = s.match(/[-+]?\d*\.?\d+/);
+            const m = String(v||"").trim().match(/[-+]?\d*\.?\d+/);
             if (m) expectedPercent = Number(m[0]);
           }
         }
 
-        // Legacy sizing column (often bucketed)
-        const legacyRaw = (idxStud >= 0) ? row[idxStud] : null;
-        const legacyCount = parseStudentCount(legacyRaw);
-
-        if (cohortSize == null && legacyCount != null) cohortSize = legacyCount;
-        if (expectedStudents == null && cohortSize != null && expectedPercent != null && Number.isFinite(expectedPercent)) {
-          const p = (expectedPercent > 1) ? (expectedPercent / 100) : expectedPercent;
+        const legacyCount = parseStudentCount(idx.students>=0 ? row[idx.students] : null);
+        if (cohortSize==null && legacyCount!=null) cohortSize = legacyCount;
+        if (expectedStudents==null && cohortSize!=null && expectedPercent!=null && Number.isFinite(expectedPercent)) {
+          const p = expectedPercent > 1 ? expectedPercent/100 : expectedPercent;
           expectedStudents = Math.max(0, Math.round(cohortSize * p));
         }
 
-        // Default student count (used for legacy displays); severity mode can override later
-        const studentsCount = (cohortSize != null) ? cohortSize : legacyCount;
-        const studentsBucket = studentsCount != null ? bucketFromCount(studentsCount) : String(legacyRaw || cohortRaw || "").trim();
+        const studentsCount  = cohortSize ?? legacyCount;
+        const studentsBucket = studentsCount!=null ? bucketFromCount(studentsCount) : String(row[idx.students>=0?idx.students:idx.cohort]||"").trim();
 
-        const statusRaw = (idxStatus >= 0) ? String(row[idxStatus] || "").trim() : "";
-        const statusNorm = (() => {
-          const s = statusRaw.toLowerCase();
-          if (s.includes("tent")) return "Tentative";
-          if (s.includes("know")) return "Known";
-          return "—";
-        })();
-        const location = (idxLoc >= 0) ? String(row[idxLoc] || "").trim() : "";
-        const themes = (idxThemes >= 0) ? parseThemes(row[idxThemes]) : [];
-        const keywords = (idxKeyword >= 0) ? parseThemes(row[idxKeyword]) : themes;
-        const startISO = excelDateToISO(row[idxStart]);
-        const finishISO = excelDateToISO(row[idxFin]);
+        const statusRaw = idx.status>=0 ? String(row[idx.status]||"").trim() : "";
+        const s = statusRaw.toLowerCase();
+        const status = s.includes("tent") ? "Tentative" : s.includes("know") ? "Known" : "—";
 
-        const hasAny = moduleName || type || startISO || finishISO;
-        if (!hasAny) continue;
+        const location = idx.location>=0 ? String(row[idx.location]||"").trim() : "";
+        const themes   = idx.themes>=0   ? parseThemes(row[idx.themes]) : [];
+        const keywords = idx.keyword>=0  ? parseThemes(row[idx.keyword]) : themes;
+        const startISO = excelDateToISO(row[idx.start]);
+        const finishISO= excelDateToISO(row[idx.finish]);
 
-        if (!moduleName || !type || !startISO || !finishISO || likelihood == null) {
-          // keep but mark as invalid to report
-          tasks.push({
-            valid: false,
-            file: fileName,
-            course: `${fileName} · ${sheetName}`,
-            moduleName,
-            yearGroup,
-            type,
-            likelihood,
-            studentsBucket,
-            studentsCount,
-            cohortSize,
-            expectedStudents,
-            expectedPercent,
-            status: statusNorm,
-            location,
-            themes,
-            keywords,
-            startISO,
-            finishISO
-          });
+        if (!moduleName && !type && !startISO && !finishISO) continue;
+
+        const base = { file:fileName, course:sheetName, moduleName, yearGroup, type, likelihood,
+                        studentsBucket, studentsCount, cohortSize, expectedStudents, expectedPercent,
+                        status, location, themes, keywords, startISO, finishISO };
+
+        if (!moduleName || !type || !startISO || !finishISO || likelihood==null) {
+          tasks.push({ ...base, valid:false, course:`${fileName} · ${sheetName}` });
           continue;
         }
 
-        const s = DateTime.fromISO(startISO, { zone: "utc" });
-        const f = DateTime.fromISO(finishISO, { zone: "utc" });
-        if (!s.isValid || !f.isValid) {
-          tasks.push({ valid: false, file: fileName, course: sheetName, moduleName, yearGroup, type, likelihood, studentsBucket, location, startISO, finishISO });
+        const dtS = DateTime.fromISO(startISO, {zone:"utc"});
+        const dtF = DateTime.fromISO(finishISO, {zone:"utc"});
+        if (!dtS.isValid || !dtF.isValid) {
+          tasks.push({ ...base, valid:false });
           continue;
         }
 
-        const start = s.startOf("day");
-        const finish = f.startOf("day");
-        const end = finish < start ? start : finish;
-
+        const start  = dtS.startOf("day");
+        const finish = (dtF.startOf("day") < start ? start : dtF.startOf("day"));
+        const sw = studentWeight((cohortSize ?? studentsCount) ?? studentsBucket);
         tasks.push({
+          ...base,
           valid: true,
-          file: fileName,
-          course: sheetName,
-          moduleName,
-          yearGroup,
-          type,
-          likelihood,
-          studentsBucket,
-          studentsCount,
-          cohortSize,
-          expectedStudents,
-          expectedPercent,
-          status: statusNorm,
-          location,
-          themes,
-          keywords,
           startISO: start.toISODate(),
-          finishISO: end.toISODate(),
-          severityPerDay: likelihood * studentWeight((cohortSize != null ? cohortSize : studentsCount) != null ? (cohortSize != null ? cohortSize : studentsCount) : studentsBucket),
-          // mode-specific values are computed later
-          modeStudentsCount: null,
-          modeStudentsBucket: "",
-          mode: "expected",
+          finishISO: finish.toISODate(),
+          severityPerDay: (likelihood||0) * sw,
+          modeStudentsCount: null, modeStudentsBucket: "", mode:"expected"
         });
       }
     }
     return tasks;
   }
 
+  // ── Filter helpers ──────────────────────────────────────────────────────────
   function refreshFilterOptions() {
-    const valid = allTasks.filter(t => t.valid);
-
-    const courses = uniqueSorted(valid.map(t => t.course));
-    const types = uniqueSorted(valid.map(t => t.type));
-
-    fillSelectMultiple(elCourse, courses);
-    fillSelectMultiple(elType, types);
-
-    
-
-    const locations = uniqueSorted(valid.map(t => (t.location && String(t.location).trim()) ? String(t.location).trim() : "—"));
-    fillSelectMultiple(elLocation, locations);
-// year group single select
-    const years = uniqueSorted(valid.map(t => t.yearGroup).filter(v => v != null));
-    elYear.innerHTML = `<option value="">All</option>` + years.map(y => `<option value="${y}">${y}</option>`).join("");
-
-    // date range defaults
-    const starts = valid.map(t => t.startISO).filter(Boolean).sort();
-    const ends = valid.map(t => t.finishISO).filter(Boolean).sort();
+    const valid = allTasks.filter(t=>t.valid);
+    fillSelectMultiple(elCourse, uniqueSorted(valid.map(t=>t.course)));
+    fillSelectMultiple(elType, uniqueSorted(valid.map(t=>t.type)));
+    fillSelectMultiple(elLocation, uniqueSorted(valid.map(t=>(t.location&&String(t.location).trim())?String(t.location).trim():"—")));
+    const years = uniqueSorted(valid.map(t=>t.yearGroup).filter(v=>v!=null));
+    elYear.innerHTML = `<option value="">All</option>` + years.map(y=>`<option value="${y}">${y}</option>`).join("");
+    const starts = valid.map(t=>t.startISO).filter(Boolean).sort();
+    const ends   = valid.map(t=>t.finishISO).filter(Boolean).sort();
     if (starts.length) elFrom.value = starts[0];
-    if (ends.length) elTo.value = ends[ends.length - 1];
-
-    kpiTasks.textContent = String(valid.length);
-    kpiCourses.textContent = String(courses.length);
+    if (ends.length)   elTo.value   = ends[ends.length-1];
+    kpiTasks.textContent   = String(valid.length);
+    kpiCourses.textContent = String(uniqueSorted(valid.map(t=>t.course)).length);
   }
 
   function applyFilters() {
-    const courses = new Set(selectedValues(elCourse));
-    const types = new Set(selectedValues(elType));
+    const courses   = new Set(selectedValues(elCourse));
+    const types     = new Set(selectedValues(elType));
     const locations = new Set(selectedValues(elLocation));
-    const year = elYear.value ? Number(elYear.value) : null;
-    const students = elStudents.value || null;
-    const q = (elSearchBox && elSearchBox.value) ? elSearchBox.value.trim().toLowerCase() : "";
+    const year      = elYear.value ? Number(elYear.value) : null;
+    const students  = elStudents.value || null;
+    const q         = elSearchBox.value.trim().toLowerCase();
+    const likeMin   = Number(elLikemin.value||1);
+    const likeMax   = Number(elLikemax.value||3);
+    const from      = elFrom.value || null;
+    const to        = elTo.value   || null;
+    const mode      = elSeverityMode.value || "expected";
 
-    const likeMin = Number(elLikemin.value || 1);
-    const likeMax = Number(elLikemax.value || 3);
-
-    const from = elFrom.value || null;
-    const to = elTo.value || null;
-
-    const valid = allTasks.filter(t => t.valid);
-
-    // apply severity mode (expected vs worst-case cohort) before filtering + drawing
-    const mode = (elSeverityMode && elSeverityMode.value) ? elSeverityMode.value : "expected";
+    const valid = allTasks.filter(t=>t.valid);
     for (const t of valid) computeModeFields(t, mode);
 
     filteredTasks = valid.filter(t => {
       if (courses.size && !courses.has(t.course)) return false;
       if (types.size && !types.has(t.type)) return false;
-      const loc = (t.location && String(t.location).trim()) ? String(t.location).trim() : "—";
+      const loc = (t.location&&String(t.location).trim()) ? String(t.location).trim() : "—";
       if (locations.size && !locations.has(loc)) return false;
       if (q) {
-        const hay = [t.moduleName, t.course, t.location, t.type, (t.keywords || []).join(" "), (t.themes || []).join(" ")].join(" ").toLowerCase();
+        const hay = [t.moduleName, t.course, t.location, t.type, ...(t.keywords||[]), ...(t.themes||[])].join(" ").toLowerCase();
         if (!hay.includes(q)) return false;
       }
-      if (year != null && t.yearGroup !== year) return false;
-      if (students && String(t.modeStudentsBucket || t.studentsBucket).trim() !== students) return false;
-      if (t.likelihood < likeMin || t.likelihood > likeMax) return false;
-
-      // overlap test with filter date window
-      if (from && t.finishISO < from) return false;
-      if (to && t.startISO > to) return false;
-
+      if (year!=null && t.yearGroup!==year) return false;
+      if (students && String(t.modeStudentsBucket||t.studentsBucket).trim()!==students) return false;
+      if (t.likelihood<likeMin || t.likelihood>likeMax) return false;
+      if (from && t.finishISO<from) return false;
+      if (to   && t.startISO>to)   return false;
       return true;
     });
 
@@ -1125,1933 +716,861 @@ function studentWeight(v) {
   function resetFilters() {
     refreshFilterOptions();
     elStudents.value = "";
-    elLikemin.value = "1";
-    elLikemax.value = "3";
-    if (elSearchBox) elSearchBox.value = "";
-    if (elSeverityMode) elSeverityMode.value = "expected";
+    elLikemin.value  = "1";
+    elLikemax.value  = "3";
+    elSearchBox.value = "";
+    elSeverityMode.value = "expected";
     applyFilters();
   }
 
-  // --- charts ---
+  // ── drawAll ─────────────────────────────────────────────────────────────────
   function drawAll() {
-  drawGantt(filteredTasks);
-  drawSeverityLines(filteredTasks);
-  drawHeatBlocks(filteredTasks);
-  drawTotalCurve(filteredTasks);
-  drawTypeStacked(filteredTasks);
-  drawLocationCurves(filteredTasks);
-  drawThemeBars(filteredTasks);
-  drawThemeTrends(filteredTasks);
-  drawKeywordOverlaps(filteredTasks);
-  renderCourseStats(filteredTasks);
+    drawGantt(filteredTasks);
+    drawSeverityLines(filteredTasks);
+    drawHeatBlocks(filteredTasks);
+    drawTotalCurve(filteredTasks);
+    drawTypeStacked(filteredTasks);
+    drawLocationCurves(filteredTasks);
+    drawThemeBars(filteredTasks);
+    drawThemeTrends(filteredTasks);
+    drawKeywordOverlaps(filteredTasks);
+    renderCourseStats(filteredTasks);
 
-    const startMin = d3.min(filteredTasks, d => d.startISO);
-    const endMax = d3.max(filteredTasks, d => d.finishISO);
-
-    ganttMeta.innerHTML = `
-      <span class="pill"><strong>${filteredTasks.length}</strong> tasks shown</span>
-      <span class="pill">${startMin ? startMin : "—"} → ${endMax ? endMax : "—"}</span>
-    `;
-
-    heatMeta.innerHTML = `
-      <span class="pill"><strong>${filteredTasks.length}</strong> tasks used</span>
-      <span class="pill">weekly aggregation</span>
-    `;
+    const startMin = d3.min(filteredTasks, d=>d.startISO);
+    const endMax   = d3.max(filteredTasks, d=>d.finishISO);
+    ganttMeta.innerHTML = `<span class="pill"><strong>${filteredTasks.length}</strong> tasks shown</span><span class="pill">${startMin||"—"} → ${endMax||"—"}</span>`;
+    heatMeta.innerHTML  = `<span class="pill"><strong>${filteredTasks.length}</strong> tasks used</span><span class="pill">weekly aggregation</span>`;
   }
 
-  function placeTooltip(evt, maxW = 340, maxH = 220) {
-    const pad = 14;
-    const x = evt.clientX + pad;
-    const y = evt.clientY + pad;
-    tooltip.style.left = `${Math.min(x, window.innerWidth - maxW)}px`;
-    tooltip.style.top = `${Math.min(y, window.innerHeight - maxH)}px`;
+  // ── Tooltip helpers ──────────────────────────────────────────────────────────
+  function placeTooltip(evt, maxW=340, maxH=220) {
+    const pad=14;
+    tooltip.style.left = `${Math.min(evt.clientX+pad, window.innerWidth-maxW)}px`;
+    tooltip.style.top  = `${Math.min(evt.clientY+pad, window.innerHeight-maxH)}px`;
   }
 
   function showTooltip(evt, task) {
-    const lines = [
-      `${task.moduleName}`,
-      `Course: ${task.course}`,
-      `Location: ${task.location || "—"}`,      `Keywords: ${(task.keywords && task.keywords.length) ? task.keywords.join(", ") : "—"}`,
-      `Year: ${task.yearGroup != null ? task.yearGroup : "—"}`,
-      `Task type: ${task.type}`,
-      `Dates: ${task.startISO} → ${task.finishISO}`,
-      `Likelihood: ${task.likelihood}`,
-      `Students (${task.mode === 'cohort' ? 'cohort' : 'expected'}): ${task.modeStudentsCount != null ? task.modeStudentsCount + ' (' + task.modeStudentsBucket + ')' : (task.modeStudentsBucket || '—')}`,
-      `Expected students: ${task.expectedStudents != null ? task.expectedStudents : '—'}${task.expectedPercent != null && task.cohortSize != null ? ' (' + ((task.expectedPercent > 1) ? task.expectedPercent : (task.expectedPercent*100)).toFixed(0) + '% of ' + task.cohortSize + ')' : ''}`,
-      `Cohort size: ${task.cohortSize != null ? task.cohortSize : '—'}`,
-      `Status: ${task.status || '—'}`,
-      `Severity per day: ${task.severityPerDay}`
-    ];
-
-    tooltip.innerHTML = `<strong>${lines[0]}</strong>\n` + lines.slice(1).join("\n");
+    const pct = task.expectedPercent!=null && task.cohortSize!=null
+      ? ` (${(task.expectedPercent>1?task.expectedPercent:task.expectedPercent*100).toFixed(0)}% of ${task.cohortSize})`
+      : "";
+    tooltip.innerHTML =
+      `<strong>${task.moduleName}</strong>\n` +
+      `Course: ${task.course}\n` +
+      `Location: ${task.location||"—"}\n` +
+      `Keywords: ${(task.keywords&&task.keywords.length)?task.keywords.join(", "):"—"}\n` +
+      `Year: ${task.yearGroup!=null?task.yearGroup:"—"}\n` +
+      `Task type: ${task.type}\n` +
+      `Dates: ${task.startISO} → ${task.finishISO}\n` +
+      `Likelihood: ${task.likelihood}\n` +
+      `Students (${task.mode==="cohort"?"cohort":"expected"}): ${task.modeStudentsCount!=null?task.modeStudentsCount+" ("+task.modeStudentsBucket+")":task.modeStudentsBucket||"—"}\n` +
+      `Expected students: ${task.expectedStudents!=null?task.expectedStudents:"—"}${pct}\n` +
+      `Cohort size: ${task.cohortSize!=null?task.cohortSize:"—"}\n` +
+      `Status: ${task.status||"—"}\n` +
+      `Severity per day: ${task.severityPerDay}`;
     tooltip.style.opacity = "1";
     tooltip.style.transform = "translateY(0px)";
-
     placeTooltip(evt);
   }
 
-  function hideTooltip() {
+  const hideTooltip = () => {
     tooltip.style.opacity = "0";
     tooltip.style.transform = "translateY(6px)";
+  };
+
+  // Rotate x-axis tick labels
+  function angleXAxis(axisG, angle=-30) {
+    if (!axisG) return;
+    axisG.selectAll("text")
+      .attr("transform",`rotate(${angle})`).style("text-anchor","end")
+      .attr("dx","-0.6em").attr("dy","0.25em");
   }
 
-  
-function drawGantt(tasks) {
-  svgG.selectAll("*").remove();
+  // ── Gantt ────────────────────────────────────────────────────────────────────
+  function drawGantt(tasks) {
+    svgG.selectAll("*").remove();
+    const width = 1400;
+    if (!tasks.length) { svgG.attr("width",width).attr("height",620); return; }
 
-  const width = 1400;
+    const shortLabel = (s, max=26) => { const t=String(s||"").trim(); return t.length<=max?t:t.slice(0,max-1)+"…"; };
+    const splitLane  = lane => { const p=String(lane||"").split(" · "); return {course:p[0]||lane, module:p.slice(1).join(" · ")||""}; };
+    const laneKey    = d => `${d.course} · ${d.moduleName}`;
+    const lanes      = uniqueSorted(tasks.map(laneKey));
+    const height     = Math.max(620, 120 + lanes.length * 18);
 
-  if (!tasks.length) {
-    svgG.attr("width", width).attr("height", 620);
-    return;
+    svgG.attr("width",width).attr("height",height);
+
+    const minDate = isoToJSDate(d3.min(tasks,d=>d.startISO));
+    const maxDate = DateTime.fromISO(d3.max(tasks,d=>d.finishISO),{zone:"utc"}).plus({days:1}).toJSDate();
+
+    const margin = {top:28, right:16, bottom:30, left:360};
+    const innerW = width-margin.left-margin.right;
+    const innerH = height-margin.top-margin.bottom;
+
+    const x = d3.scaleTime().domain([minDate,maxDate]).range([0,innerW]);
+    const y = d3.scaleBand().domain(lanes).range([0,innerH]).paddingInner(0.16);
+
+    const g = svgG.append("g").attr("transform",`translate(${margin.left},${margin.top})`);
+
+    g.append("g").attr("class","grid").attr("transform",`translate(0,${innerH})`)
+      .call(d3.axisBottom(x).ticks(d3.timeWeek.every(1)).tickSize(-innerH).tickFormat(()=>""));
+
+    const xAxisG = g.append("g").attr("class","axis").attr("transform",`translate(0,${innerH})`)
+      .call(d3.axisBottom(x).ticks(d3.timeWeek.every(1)).tickFormat(d3.timeFormat("%d %b")));
+    angleXAxis(xAxisG);
+
+    g.append("g").attr("class","axis").call(d3.axisLeft(y).tickSize(0).tickFormat(d=>{
+      const {module} = splitLane(d); return shortLabel(module||d,24);
+    })).selectAll("text").attr("fill","#aeb6c6").attr("font-size",11);
+
+    // Course header labels
+    const laneMeta = lanes.map(l=>({lane:l,...splitLane(l)}));
+    Array.from(d3.group(laneMeta,d=>d.course), ([course,items])=>{
+      const topLane = items.map(i=>i.lane).sort((a,b)=>(y(a)??0)-(y(b)??0))[0];
+      return {course, lane:topLane};
+    }).sort((a,b)=>(y(a.lane)??0)-(y(b.lane)??0))
+      .forEach(({course,lane}) => {
+        g.append("text").attr("class","courseHeader").attr("x",-350)
+          .attr("y",(y(lane)??0)+3).attr("fill","#f1f1f1").attr("font-size",12)
+          .attr("font-weight",700).text(shortLabel(course,30));
+      });
+
+    // Task bars
+    g.append("g").selectAll("rect").data(tasks).enter().append("rect")
+      .attr("class","task")
+      .attr("x", d=>x(isoToJSDate(d.startISO)))
+      .attr("y", d=>(y(laneKey(d))??0)+1)
+      .attr("width", d=>{
+        const a=x(isoToJSDate(d.startISO));
+        const b=x(DateTime.fromISO(d.finishISO,{zone:"utc"}).plus({days:1}).toJSDate());
+        return Math.max(2,b-a);
+      })
+      .attr("height", Math.max(10,y.bandwidth()-2))
+      .attr("fill", d=>likelihoodColour(d.likelihood))
+      .on("mousemove",(evt,d)=>showTooltip(evt,d)).on("mouseleave",hideTooltip);
+
+    // Lane separators
+    g.append("g").selectAll("line").data(lanes).enter().append("line")
+      .attr("x1",0).attr("x2",innerW)
+      .attr("y1",d=>(y(d)??0)+y.bandwidth()).attr("y2",d=>(y(d)??0)+y.bandwidth())
+      .attr("stroke","#171b24").attr("stroke-width",1);
+
+    svgG.append("text").attr("x",margin.left).attr("y",18).attr("fill","#aeb6c6").attr("font-size",12)
+      .text("Lanes: course · module (each task plotted by its date range)");
   }
 
-  // Helpers for label management
-  function shortLabel(s, max = 26) {
-    const t = String(s || "").trim();
-    if (t.length <= max) return t;
-    return t.slice(0, Math.max(0, max - 1)) + "…";
-  }
+  // ── Severity lines (per course) ──────────────────────────────────────────────
+  function drawSeverityLines(tasks) {
+    svgH.selectAll("*").remove();
+    const [width,height]=[1400,520];
+    svgH.attr("width",width).attr("height",height);
+    if (!tasks.length) return;
 
-  function splitLaneLabel(lane) {
-    const parts = String(lane || "").split(" · ");
-    return {
-      course: parts[0] || String(lane || ""),
-      module: parts.slice(1).join(" · ") || ""
-    };
-  }
+    const courses = uniqueSorted(tasks.map(t=>t.course));
+    const weeks   = buildWeeks(d3.min(tasks,d=>d.startISO), d3.max(tasks,d=>d.finishISO));
+    const totals  = aggregateWeekly(tasks, t=>t.course);
+    const series  = courses.map(c=>({
+      course:c, _key:c,
+      values: weeks.map(w=>({weekISO:w, date:isoToJSDate(w), value:totals.get(`${c}||${w}`)||0}))
+    }));
 
-  // lanes: course + module
-  const laneKey = d => `${d.course} · ${d.moduleName}`;
-  const lanes = uniqueSorted(tasks.map(laneKey));
+    const maxVal = d3.max(series, s=>d3.max(s.values,v=>v.value))||1;
+    const margin = {top:30, right:220, bottom:40, left:60};
+    const innerW = width-margin.left-margin.right;
+    const innerH = height-margin.top-margin.bottom;
 
-  // Dynamic height so labels do not overlap when there are many lanes
-  const rowH = 18; // pixels per lane row (incl padding)
-  const height = Math.max(620, 120 + lanes.length * rowH);
+    const x = d3.scaleTime()
+      .domain([isoToJSDate(weeks[0]), DateTime.fromISO(weeks[weeks.length-1],{zone:"utc"}).plus({weeks:1}).toJSDate()])
+      .range([0,innerW]);
+    const y = d3.scaleLinear().domain([0,maxVal]).nice().range([innerH,0]);
 
-  svgG.attr("width", width).attr("height", height);
+    const g = svgH.append("g").attr("transform",`translate(${margin.left},${margin.top})`);
+    addGridAndAxes(g, x, y, innerW, innerH, d3.timeWeek.every(2), 6);
 
-  // time domain
-  const minISO = d3.min(tasks, d => d.startISO);
-  const maxISO = d3.max(tasks, d => d.finishISO);
-
-  const minDate = DateTime.fromISO(minISO, { zone: "utc" }).toJSDate();
-  const maxDate = DateTime.fromISO(maxISO, { zone: "utc" }).plus({ days: 1 }).toJSDate();
-
-  // Increase left margin to make room for course headers + module labels
-  const margin = { top: 28, right: 16, bottom: 30, left: 360 };
-  const innerW = width - margin.left - margin.right;
-  const innerH = height - margin.top - margin.bottom;
-
-  const x = d3.scaleTime().domain([minDate, maxDate]).range([0, innerW]);
-  const y = d3.scaleBand().domain(lanes).range([0, innerH]).paddingInner(0.16);
-
-  const g = svgG.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
-
-  // background grid by week
-  const xAxis = d3.axisBottom(x).ticks(d3.timeWeek.every(1)).tickFormat(d3.timeFormat("%d %b"));
-
-  // Show only module name (shortened) in the y-axis tick labels
-  const yAxis = d3.axisLeft(y)
-    .tickSize(0)
-    .tickFormat(d => {
-      const { module } = splitLaneLabel(d);
-      return shortLabel(module || d, 24);
+    const colour = d3.scaleOrdinal().domain(courses).range(d3.schemeTableau10.concat(d3.schemeSet3).slice(0,Math.max(10,courses.length)));
+    addLinesAndDots(g, x, y, series, "value", d=>colour(d._key||d.course), (evt,d) => {
+      const dt = DateTime.fromISO(d.weekISO,{zone:"utc"});
+      tooltip.innerHTML = `<strong>${d._key}</strong>\nWeek commencing: ${dt.toFormat("dd LLL yyyy")}\nWeekly severity: ${d.value.toFixed(0)}`;
+      tooltip.style.opacity="1"; tooltip.style.transform="translateY(0px)"; placeTooltip(evt);
     });
 
-  g.append("g")
-    .attr("class", "grid")
-    .attr("transform", `translate(0,${innerH})`)
-    .call(d3.axisBottom(x).ticks(d3.timeWeek.every(1)).tickSize(-innerH).tickFormat(() => ""));
-
-  g.append("g")
-    .attr("class", "axis")
-    .attr("transform", `translate(0,${innerH})`)
-    .call(xAxis);
-
-  // y-axis
-  g.append("g")
-    .attr("class", "axis")
-    .call(yAxis)
-    .selectAll("text")
-    .attr("fill", "#aeb6c6")
-    .attr("font-size", 11);
-
-  // Course headers: draw one label per course group (bold), aligned with the first lane in each course
-  const laneMeta = lanes.map(l => ({ lane: l, ...splitLaneLabel(l) }));
-  const grouped = d3.group(laneMeta, d => d.course);
-
-  const firstLanePerCourse = Array.from(grouped, ([course, items]) => {
-    // The lane with the smallest y-position for this course
-    const topLane = items
-      .map(i => i.lane)
-      .sort((a, b) => (y(a) ?? 0) - (y(b) ?? 0))[0];
-    return { course, lane: topLane };
-  }).sort((a, b) => (y(a.lane) ?? 0) - (y(b.lane) ?? 0));
-
-  g.append("g")
-    .selectAll("text.courseHeader")
-    .data(firstLanePerCourse)
-    .enter()
-    .append("text")
-    .attr("class", "courseHeader")
-    .attr("x", -350) // inside left margin area
-    .attr("y", d => (y(d.lane) ?? 0) + 3)
-    .attr("fill", "#f1f1f1")
-    .attr("font-size", 12)
-    .attr("font-weight", 700)
-    .text(d => shortLabel(d.course, 30));
-
-  // tasks
-  const bars = g.append("g");
-
-  bars.selectAll("rect")
-    .data(tasks)
-    .enter()
-    .append("rect")
-    .attr("class", "task")
-    .attr("x", d => x(DateTime.fromISO(d.startISO, { zone: "utc" }).toJSDate()))
-    .attr("y", d => (y(laneKey(d)) ?? 0) + 1)
-    .attr("width", d => {
-      const a = x(DateTime.fromISO(d.startISO, { zone: "utc" }).toJSDate());
-      const b = x(DateTime.fromISO(d.finishISO, { zone: "utc" }).plus({ days: 1 }).toJSDate());
-      return Math.max(2, b - a);
-    })
-    .attr("height", Math.max(10, y.bandwidth() - 2))
-    .attr("fill", d => likelihoodColour(d.likelihood))
-    .on("mousemove", function(evt, d) { showTooltip(evt, d); })
-    .on("mouseleave", hideTooltip);
-
-  // lane separators
-  g.append("g")
-    .selectAll("line")
-    .data(lanes)
-    .enter()
-    .append("line")
-    .attr("x1", 0)
-    .attr("x2", innerW)
-    .attr("y1", d => (y(d) ?? 0) + y.bandwidth())
-    .attr("y2", d => (y(d) ?? 0) + y.bandwidth())
-    .attr("stroke", "#171b24")
-    .attr("stroke-width", 1);
-
-  // title label
-  svgG.append("text")
-    .attr("x", margin.left)
-    .attr("y", 18)
-    .attr("fill", "#aeb6c6")
-    .attr("font-size", 12)
-    .text("Lanes: course · module (each task plotted by its date range)");
-}
-
-
-
-function startOfISOWeek(dt) {
-    // Luxon weekday: Monday=1
-    const diff = dt.weekday - 1;
-    return dt.minus({ days: diff }).startOf("day");
+    addRightLegend(svgH, "Courses", courses, d=>colour(d), margin, innerW);
   }
 
-function drawSeverityLines(tasks) {
-  svgH.selectAll("*").remove();
+  // ── HTML escape helper ───────────────────────────────────────────────────────
+  const escapeHtml = str => String(str)
+    .replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;").replaceAll("'","&#039;");
 
-  const width = 1400;
-  const height = 520;
-  svgH.attr("width", width).attr("height", height);
-
-  if (!tasks.length) return;
-
-  const courses = uniqueSorted(tasks.map(t => t.course));
-
-  const minISO = d3.min(tasks, d => d.startISO);
-  const maxISO = d3.max(tasks, d => d.finishISO);
-
-  const minDT = startOfISOWeek(DateTime.fromISO(minISO, { zone: "utc" }));
-  const maxDT = startOfISOWeek(DateTime.fromISO(maxISO, { zone: "utc" }));
-
-  // build week list
-  const weeks = [];
-  for (let d = minDT; d <= maxDT; d = d.plus({ weeks: 1 })) {
-    weeks.push(d.toISODate());
-  }
-
-  // aggregate severity by course-week
-  const key = (course, weekISO) => `${course}||${weekISO}`;
-  const totals = new Map();
-
-  for (const t of tasks) {
-    const s = DateTime.fromISO(t.startISO, { zone: "utc" }).startOf("day");
-    const f = DateTime.fromISO(t.finishISO, { zone: "utc" }).startOf("day");
-
-    for (let d = s; d <= f; d = d.plus({ days: 1 })) {
-      const w = startOfISOWeek(d).toISODate();
-      const k = key(t.course, w);
-      totals.set(k, (totals.get(k) || 0) + t.severityPerDay);
-    }
-  }
-
-  // shape data for lines
-  const series = courses.map(course => ({
-    course,
-    values: weeks.map(w => ({
-      weekISO: w,
-      date: DateTime.fromISO(w, { zone: "utc" }).toJSDate(),
-      value: totals.get(key(course, w)) || 0
-    }))
-  }));
-
-  const maxVal = d3.max(series, s => d3.max(s.values, v => v.value)) || 1;
-
-  const margin = { top: 30, right: 220, bottom: 40, left: 60 };
-  const innerW = width - margin.left - margin.right;
-  const innerH = height - margin.top - margin.bottom;
-
-  const x = d3.scaleTime()
-    .domain([DateTime.fromISO(weeks[0], { zone: "utc" }).toJSDate(),
-             DateTime.fromISO(weeks[weeks.length - 1], { zone: "utc" }).plus({ weeks: 1 }).toJSDate()])
-    .range([0, innerW]);
-
-  const y = d3.scaleLinear()
-    .domain([0, maxVal])
-    .nice()
-    .range([innerH, 0]);
-
-  const g = svgH.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
-
-  // grid
-  g.append("g")
-    .attr("class", "grid")
-    .call(d3.axisLeft(y).ticks(6).tickSize(-innerW).tickFormat(() => ""));
-
-  // axes
-  g.append("g")
-    .attr("class", "axis")
-    .attr("transform", `translate(0,${innerH})`)
-    .call(d3.axisBottom(x).ticks(d3.timeWeek.every(2)).tickFormat(d3.timeFormat("%d %b")));
-
-  g.append("g")
-    .attr("class", "axis")
-    .call(d3.axisLeft(y).ticks(6));
-
-  // line generator
-  const line = d3.line()
-    .x(d => x(d.date))
-    .y(d => y(d.value))
-    .curve(d3.curveMonotoneX);
-
-  // colour per course (do not hardcode colours; use a default categorical scale)
-  const colour = d3.scaleOrdinal()
-    .domain(courses)
-    .range(d3.schemeTableau10.concat(d3.schemeSet3).slice(0, Math.max(10, courses.length)));
-
-  // draw lines
-  const linesG = g.append("g");
-
-  linesG.selectAll("path")
-    .data(series)
-    .enter()
-    .append("path")
-    .attr("fill", "none")
-    .attr("stroke-width", 2)
-    .attr("stroke", d => colour(d.course))
-    .attr("d", d => line(d.values));
-
-  // draw points for hover
-  const points = linesG.selectAll("g.points")
-    .data(series)
-    .enter()
-    .append("g")
-    .attr("class", "points");
-
-  points.selectAll("circle")
-    .data(d => d.values.map(v => ({ ...v, course: d.course })))
-    .enter()
-    .append("circle")
-    .attr("cx", d => x(d.date))
-    .attr("cy", d => y(d.value))
-    .attr("r", 3)
-    .attr("fill", d => colour(d.course))
-    .on("mousemove", function(evt, d) {
-      const dt = DateTime.fromISO(d.weekISO, { zone: "utc" });
-
-      tooltip.innerHTML =
-        `<strong>${d.course}</strong>\n` +
-        `Week commencing: ${dt.toFormat("dd LLL yyyy")}\n` +
-        `Weekly severity: ${d.value.toFixed(0)}`;
-
-      tooltip.style.opacity = "1";
-      tooltip.style.transform = "translateY(0px)";
-      placeTooltip(evt);
-    })
-    .on("mouseleave", hideTooltip);
-
-  // legend (right side)
-  const legend = svgH.append("g")
-    .attr("transform", `translate(${margin.left + innerW + 14},${margin.top})`);
-
-  legend.append("text")
-    .attr("x", 0)
-    .attr("y", 0)
-    .attr("fill", "#aeb6c6")
-    .attr("font-size", 12)
-    .text("Courses");
-
-  const legendItems = legend.selectAll("g.item")
-    .data(courses)
-    .enter()
-    .append("g")
-    .attr("class", "item")
-    .attr("transform", (d, i) => `translate(0,${16 + i * 16})`);
-
-  legendItems.append("rect")
-    .attr("x", 0)
-    .attr("y", -10)
-    .attr("width", 10)
-    .attr("height", 10)
-    .attr("rx", 3)
-    .attr("ry", 3)
-    .attr("fill", d => colour(d));
-
-  legendItems.append("text")
-    .attr("x", 16)
-    .attr("y", -2)
-    .attr("fill", "#aeb6c6")
-    .attr("font-size", 11)
-    .text(d => d);
-}
-
-  function escapeHtml(str) {
-    return String(str)
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#039;");
-  }
-
+  // ── Course stats table ───────────────────────────────────────────────────────
   function renderCourseStats(tasks) {
-    const el = document.getElementById("courseStatsBody");
+    const el = $("courseStatsBody");
     if (!el) return;
-
-    if (!tasks || tasks.length === 0) {
+    if (!tasks || !tasks.length) {
       el.innerHTML = `<div class="note">No tasks to summarise (check filters).</div>`;
       if (statsMeta) statsMeta.innerHTML = "";
       return;
     }
-
     const byCourse = new Map();
-
     for (const t of tasks) {
-      const course = t.course || "—";
-      const s = DateTime.fromISO(t.startISO, { zone: "utc" }).startOf("day");
-      const f = DateTime.fromISO(t.finishISO, { zone: "utc" }).startOf("day");
-      if (!s.isValid || !f.isValid) continue;
-
-      const days = Math.max(1, Math.floor(f.diff(s, "days").days) + 1);
-      const sev = (t.severityPerDay || 0) * days;
-
-      if (!byCourse.has(course)) {
-        byCourse.set(course, { course, totalSeverity: 0, totalTaskDays: 0, tasksCount: 0 });
-      }
-      const agg = byCourse.get(course);
-      agg.totalSeverity += sev;
-      agg.totalTaskDays += days;
-      agg.tasksCount += 1;
+      const s = DateTime.fromISO(t.startISO,{zone:"utc"}).startOf("day");
+      const f = DateTime.fromISO(t.finishISO,{zone:"utc"}).startOf("day");
+      if (!s.isValid||!f.isValid) continue;
+      const days = Math.max(1, Math.floor(f.diff(s,"days").days)+1);
+      const c = t.course||"—";
+      if (!byCourse.has(c)) byCourse.set(c,{course:c,totalSeverity:0,totalTaskDays:0,tasksCount:0});
+      const agg = byCourse.get(c);
+      agg.totalSeverity  += (t.severityPerDay||0)*days;
+      agg.totalTaskDays  += days;
+      agg.tasksCount     += 1;
     }
-
     const rows = Array.from(byCourse.values())
-      .map(r => ({
-        ...r,
-        avgSeverityPerDay: r.totalTaskDays ? (r.totalSeverity / r.totalTaskDays) : 0
-      }))
-      .sort((a, b) => b.totalSeverity - a.totalSeverity);
-
-    const totalSeverityAll = rows.reduce((acc, r) => acc + r.totalSeverity, 0);
-    const totalTaskDaysAll = rows.reduce((acc, r) => acc + r.totalTaskDays, 0);
-    const totalTasksAll = rows.reduce((acc, r) => acc + r.tasksCount, 0);
-
-    const top = rows.slice(0, 10);
-
-    if (statsMeta) {
-      statsMeta.innerHTML = `
-        <span class="pill"><strong>${rows.length}</strong> courses</span>
-        <span class="pill"><strong>${totalTasksAll}</strong> tasks</span>
-        <span class="pill"><strong>${totalSeverityAll.toFixed(0)}</strong> total severity</span>
-      `;
-    }
-
+      .map(r=>({...r, avgSeverityPerDay:r.totalTaskDays?(r.totalSeverity/r.totalTaskDays):0}))
+      .sort((a,b)=>b.totalSeverity-a.totalSeverity);
+    const totSev  = rows.reduce((a,r)=>a+r.totalSeverity,0);
+    const totDays = rows.reduce((a,r)=>a+r.totalTaskDays,0);
+    const totTasks= rows.reduce((a,r)=>a+r.tasksCount,0);
+    if (statsMeta) statsMeta.innerHTML =
+      `<span class="pill"><strong>${rows.length}</strong> courses</span>` +
+      `<span class="pill"><strong>${totTasks}</strong> tasks</span>` +
+      `<span class="pill"><strong>${totSev.toFixed(0)}</strong> total severity</span>`;
+    const top = rows.slice(0,10);
     el.innerHTML = `
       <div class="stats-kpi">
-        <div class="box">
-          <div class="big">${rows[0] ? escapeHtml(rows[0].course) : "—"}</div>
-          <div class="small">Highest total severity</div>
-        </div>
-        <div class="box">
-          <div class="big">${(rows[0] ? rows[0].totalSeverity : 0).toFixed(0)}</div>
-          <div class="small">Top course severity</div>
-        </div>
-        <div class="box">
-          <div class="big">${totalTaskDaysAll}</div>
-          <div class="small">Task-days (all courses)</div>
-        </div>
-        <div class="box">
-          <div class="big">${(totalTaskDaysAll ? (totalSeverityAll / totalTaskDaysAll) : 0).toFixed(2)}</div>
-          <div class="small">Average severity per day (all)</div>
-        </div>
+        <div class="box"><div class="big">${rows[0]?escapeHtml(rows[0].course):"—"}</div><div class="small">Highest total severity</div></div>
+        <div class="box"><div class="big">${(rows[0]?rows[0].totalSeverity:0).toFixed(0)}</div><div class="small">Top course severity</div></div>
+        <div class="box"><div class="big">${totDays}</div><div class="small">Task-days (all courses)</div></div>
+        <div class="box"><div class="big">${(totDays?(totSev/totDays):0).toFixed(2)}</div><div class="small">Average severity per day (all)</div></div>
       </div>
-
       <table class="stats-table">
-        <thead>
-          <tr>
-            <th>Rank</th>
-            <th>Course</th>
-            <th class="num">Total severity</th>
-            <th class="num">Task-days</th>
-            <th class="num">Tasks</th>
-            <th class="num">Avg severity/day</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${top.map((r, i) => `
-            <tr>
-              <td style="color:#aeb6c6;">${i + 1}</td>
-              <td>${escapeHtml(r.course)}</td>
-              <td class="num">${r.totalSeverity.toFixed(0)}</td>
-              <td class="num">${r.totalTaskDays}</td>
-              <td class="num">${r.tasksCount}</td>
-              <td class="num">${r.avgSeverityPerDay.toFixed(2)}</td>
-            </tr>
-          `).join("")}
-        </tbody>
-      </table>
-    `;
+        <thead><tr><th>Rank</th><th>Course</th><th class="num">Total severity</th><th class="num">Task-days</th><th class="num">Tasks</th><th class="num">Avg severity/day</th></tr></thead>
+        <tbody>${top.map((r,i)=>`<tr><td style="color:#aeb6c6;">${i+1}</td><td>${escapeHtml(r.course)}</td><td class="num">${r.totalSeverity.toFixed(0)}</td><td class="num">${r.totalTaskDays}</td><td class="num">${r.tasksCount}</td><td class="num">${r.avgSeverityPerDay.toFixed(2)}</td></tr>`).join("")}</tbody>
+      </table>`;
   }
 
+  // ── Heat blocks ─────────────────────────────────────────────────────────────
+  function drawHeatBlocks(tasks) {
+    const svgB = d3.select("#heatBlocks");
+    if (svgB.empty()) return;
+    svgB.selectAll("*").remove();
+    const width = 1400;
+    if (!tasks||!tasks.length) { svgB.attr("width",width).attr("height",120); return; }
 
-  
-function drawHeatBlocks(tasks) {
-  const svgB = d3.select("#heatBlocks");
-  if (svgB.empty()) return;
+    const courses = uniqueSorted(tasks.map(t=>t.course));
+    const weeks   = buildWeeks(d3.min(tasks,d=>d.startISO), d3.max(tasks,d=>d.finishISO));
+    const totals  = aggregateWeekly(tasks, t=>t.course);
+    const data    = courses.flatMap(c => weeks.map(w=>({course:c, week:w, value:totals.get(`${c}||${w}`)||0})));
+    const maxVal  = d3.max(data,d=>d.value)||1;
+    const height  = Math.max(220, 70+courses.length*18);
 
-  svgB.selectAll("*").remove();
+    svgB.attr("width",width).attr("height",height);
+    const margin = {top:30, right:16, bottom:40, left:240};
+    const innerW = width-margin.left-margin.right;
+    const innerH = height-margin.top-margin.bottom;
 
-  const width = 1400;
+    const x = d3.scaleBand().domain(weeks).range([0,innerW]).padding(0.08);
+    const y = d3.scaleBand().domain(courses).range([0,innerH]).padding(0.14);
+    const colour = d3.scaleLinear().domain([0,maxVal]).range(["rgba(15,17,24,1)","rgba(255,107,107,.85)"]);
 
-  if (!tasks || !tasks.length) {
-    svgB.attr("width", width).attr("height", 120);
-    return;
+    const g = svgB.append("g").attr("transform",`translate(${margin.left},${margin.top})`);
+    const tickWeeks = weeks.filter((_,i)=>i%2===0);
+    const xAxisG = g.append("g").attr("class","axis").attr("transform",`translate(0,${innerH})`)
+      .call(d3.axisBottom(x).tickValues(tickWeeks).tickFormat(w=>DateTime.fromISO(w,{zone:"utc"}).toFormat("dd LLL")));
+    angleXAxis(xAxisG);
+    g.append("g").attr("class","axis").call(d3.axisLeft(y).tickSize(0));
+
+    g.selectAll("rect").data(data).enter().append("rect")
+      .attr("class","heatcell")
+      .attr("x",d=>x(d.week)).attr("y",d=>y(d.course))
+      .attr("width",x.bandwidth()).attr("height",y.bandwidth())
+      .attr("fill",d=>colour(d.value))
+      .on("mousemove",(evt,d)=>{
+        const dt = DateTime.fromISO(d.week,{zone:"utc"});
+        tooltip.innerHTML = `<strong>${d.course}</strong>\nWeek commencing: ${dt.toFormat("dd LLL yyyy")}\nWeekly severity: ${d.value.toFixed(0)}`;
+        tooltip.style.opacity="1"; tooltip.style.transform="translateY(0px)"; placeTooltip(evt);
+      }).on("mouseleave",hideTooltip);
+
+    svgB.append("text").attr("x",margin.left).attr("y",18).attr("fill","#aeb6c6").attr("font-size",12)
+      .text("Weekly severity blocks by course (sheet).");
   }
 
-  const courses = uniqueSorted(tasks.map(t => t.course));
-  const minISO = d3.min(tasks, d => d.startISO);
-  const maxISO = d3.max(tasks, d => d.finishISO);
+  // ── Total curve ─────────────────────────────────────────────────────────────
+  function drawTotalCurve(tasks) {
+    const svgT = d3.select("#totalCurve");
+    if (svgT.empty()) return;
+    svgT.selectAll("*").remove();
+    const [width,height]=[1400,260];
+    svgT.attr("width",width).attr("height",height);
+    if (!tasks||!tasks.length) return;
 
-  const minDT = startOfISOWeek(DateTime.fromISO(minISO, { zone: "utc" }));
-  const maxDT = startOfISOWeek(DateTime.fromISO(maxISO, { zone: "utc" }));
+    const weeks = buildWeeks(d3.min(tasks,d=>d.startISO), d3.max(tasks,d=>d.finishISO));
+    const totalsKnown = new Map(), totalsTent = new Map();
+    const isTentative = t => String(t.status||"").toLowerCase().includes("tent");
 
-  const weeks = [];
-  for (let d = minDT; d <= maxDT; d = d.plus({ weeks: 1 })) {
-    weeks.push(d.toISODate());
-  }
-
-  // Aggregate severity by course-week (sum of severity per day across all task days)
-  const key = (course, weekISO) => `${course}||${weekISO}`;
-  const totals = new Map();
-
-  for (const t of tasks) {
-    const s = DateTime.fromISO(t.startISO, { zone: "utc" }).startOf("day");
-    const f = DateTime.fromISO(t.finishISO, { zone: "utc" }).startOf("day");
-    if (!s.isValid || !f.isValid) continue;
-
-    for (let d = s; d <= f; d = d.plus({ days: 1 })) {
-      const w = startOfISOWeek(d).toISODate();
-      const k = key(t.course, w);
-      totals.set(k, (totals.get(k) || 0) + (t.severityPerDay || 0));
+    for (const t of tasks) {
+      const s = DateTime.fromISO(t.startISO,{zone:"utc"}).startOf("day");
+      const f = DateTime.fromISO(t.finishISO,{zone:"utc"}).startOf("day");
+      if (!s.isValid||!f.isValid) continue;
+      for (let d=s; d<=f; d=d.plus({days:1})) {
+        const w = startOfISOWeek(d).toISODate();
+        const add = t.severityPerDay||0;
+        const map = isTentative(t) ? totalsTent : totalsKnown;
+        map.set(w,(map.get(w)||0)+add);
+      }
     }
-  }
 
-  const data = [];
-  for (const c of courses) {
-    for (const w of weeks) {
-      data.push({ course: c, week: w, value: totals.get(key(c, w)) || 0 });
-    }
-  }
-
-  const maxVal = d3.max(data, d => d.value) || 1;
-
-  // dynamic height so labels do not collide (scroll happens in svgwrap)
-  const rowH = 18;
-  const height = Math.max(220, 70 + courses.length * rowH);
-
-  svgB.attr("width", width).attr("height", height);
-
-  const margin = { top: 30, right: 16, bottom: 40, left: 240 };
-  const innerW = width - margin.left - margin.right;
-  const innerH = height - margin.top - margin.bottom;
-
-  const x = d3.scaleBand().domain(weeks).range([0, innerW]).padding(0.08);
-  const y = d3.scaleBand().domain(courses).range([0, innerH]).padding(0.14);
-
-  // Dark-to-light intensity. Keep within the existing palette.
-  const colour = d3.scaleLinear()
-    .domain([0, maxVal])
-    .range(["rgba(15,17,24,1)", "rgba(255,107,107,0.85)"]);
-
-  const g = svgB.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
-
-  // axes (sparser x ticks)
-  const tickWeeks = weeks.filter((_, i) => i % 2 === 0);
-  const xAxis = d3.axisBottom(x).tickValues(tickWeeks).tickFormat(w => {
-    const dt = DateTime.fromISO(w, { zone: "utc" });
-    return dt.toFormat("dd LLL");
-  });
-
-  g.append("g")
-    .attr("class", "axis")
-    .attr("transform", `translate(0,${innerH})`)
-    .call(xAxis)
-    .selectAll("text")
-    .attr("transform", "rotate(-30)")
-    .style("text-anchor", "end");
-
-  g.append("g")
-    .attr("class", "axis")
-    .call(d3.axisLeft(y).tickSize(0));
-
-  g.selectAll("rect")
-    .data(data)
-    .enter()
-    .append("rect")
-    .attr("class", "heatcell")
-    .attr("x", d => x(d.week))
-    .attr("y", d => y(d.course))
-    .attr("width", x.bandwidth())
-    .attr("height", y.bandwidth())
-    .attr("fill", d => colour(d.value))
-    .on("mousemove", function(evt, d) {
-      const dt = DateTime.fromISO(d.week, { zone: "utc" });
-
-      tooltip.innerHTML =
-        `<strong>${d.course}</strong>\n` +
-        `Week commencing: ${dt.toFormat("dd LLL yyyy")}\n` +
-        `Weekly severity: ${d.value.toFixed(0)}`;
-
-      tooltip.style.opacity = "1";
-      tooltip.style.transform = "translateY(0px)";
-      placeTooltip(evt);
-    })
-    .on("mouseleave", hideTooltip);
-
-  svgB.append("text")
-    .attr("x", margin.left)
-    .attr("y", 18)
-    .attr("fill", "#aeb6c6")
-    .attr("font-size", 12)
-    .text("Weekly severity blocks by course (sheet).");
-}
-
-
-function drawTotalCurve(tasks) {
-  const svgT = d3.select("#totalCurve");
-  if (svgT.empty()) return;
-
-  svgT.selectAll("*").remove();
-
-  const width = 1400;
-  const height = 260;
-  svgT.attr("width", width).attr("height", height);
-
-  if (!tasks || !tasks.length) return;
-
-  const minISO = d3.min(tasks, d => d.startISO);
-  const maxISO = d3.max(tasks, d => d.finishISO);
-
-  const minDT = startOfISOWeek(DateTime.fromISO(minISO, { zone: "utc" }));
-  const maxDT = startOfISOWeek(DateTime.fromISO(maxISO, { zone: "utc" }));
-
-  const weeks = [];
-  for (let d = minDT; d <= maxDT; d = d.plus({ weeks: 1 })) weeks.push(d.toISODate());
-
-  const totalsKnown = new Map();   // weekISO -> value
-  const totalsTent = new Map();    // weekISO -> value
-
-  function isTentative(t) {
-    const s = String(t.status || "").toLowerCase();
-    return s.includes("tent");
-  }
-
-  for (const t of tasks) {
-    const s = DateTime.fromISO(t.startISO, { zone: "utc" }).startOf("day");
-    const f = DateTime.fromISO(t.finishISO, { zone: "utc" }).startOf("day");
-    if (!s.isValid || !f.isValid) continue;
-
-    for (let d = s; d <= f; d = d.plus({ days: 1 })) {
-      const w = startOfISOWeek(d).toISODate();
-      const add = (t.severityPerDay || 0);
-      if (isTentative(t)) totalsTent.set(w, (totalsTent.get(w) || 0) + add);
-      else totalsKnown.set(w, (totalsKnown.get(w) || 0) + add);
-    }
-  }
-
-  const data = weeks.map(w => {
-    const known = totalsKnown.get(w) || 0;
-    const tent = totalsTent.get(w) || 0;
-    return {
-      weekISO: w,
-      date: DateTime.fromISO(w, { zone: "utc" }).toJSDate(),
-      known,
-      tentative: tent,
-      total: known + tent
-    };
-  });
-
-  const maxVal = d3.max(data, d => d.total) || 1;
-
-  const margin = { top: 24, right: 140, bottom: 36, left: 60 };
-  const innerW = width - margin.left - margin.right;
-  const innerH = height - margin.top - margin.bottom;
-
-  const x = d3.scaleTime()
-    .domain([data[0].date, DateTime.fromISO(weeks[weeks.length - 1], { zone: "utc" }).plus({ weeks: 1 }).toJSDate()])
-    .range([0, innerW]);
-
-  const y = d3.scaleLinear().domain([0, maxVal]).nice().range([innerH, 0]);
-
-  const g = svgT.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
-
-  g.append("g")
-    .attr("class", "grid")
-    .call(d3.axisLeft(y).ticks(4).tickSize(-innerW).tickFormat(() => ""));
-
-  g.append("g")
-    .attr("class", "axis")
-    .attr("transform", `translate(0,${innerH})`)
-    .call(d3.axisBottom(x).ticks(d3.timeWeek.every(2)).tickFormat(d3.timeFormat("%d %b")));
-
-  g.append("g")
-    .attr("class", "axis")
-    .call(d3.axisLeft(y).ticks(4));
-
-  const line = d3.line()
-    .x(d => x(d.date))
-    .y(d => y(d.value))
-    .curve(d3.curveMonotoneX);
-
-  // Known (solid)
-  g.append("path")
-    .datum(data.map(d => ({ ...d, value: d.known })))
-    .attr("fill", "none")
-    .attr("stroke", "rgba(122,162,255,0.95)")
-    .attr("stroke-width", 2.5)
-    .attr("d", line);
-
-  // Tentative (dashed)
-  g.append("path")
-    .datum(data.map(d => ({ ...d, value: d.tentative })))
-    .attr("fill", "none")
-    .attr("stroke", "rgba(122,162,255,0.95)")
-    .attr("stroke-width", 2.5)
-    .attr("stroke-dasharray", "7,6")
-    .attr("opacity", 0.9)
-    .attr("d", line);
-
-  // points for hover
-  g.selectAll("circle")
-    .data(data)
-    .enter()
-    .append("circle")
-    .attr("cx", d => x(d.date))
-    .attr("cy", d => y(d.total))
-    .attr("r", 3)
-    .attr("fill", "rgba(255,184,107,0.90)")
-    .on("mousemove", function(evt, d) {
-      const dt = DateTime.fromISO(d.weekISO, { zone: "utc" });
-      tooltip.innerHTML =
-        `<strong>All programmes</strong>\n` +
-        `Week commencing: ${dt.toFormat("dd LLL yyyy")}\n` +
-        `Known: ${d.known.toFixed(0)}\n` +
-        `Tentative: ${d.tentative.toFixed(0)}\n` +
-        `Total: ${d.total.toFixed(0)}`;
-
-      tooltip.style.opacity = "1";
-      tooltip.style.transform = "translateY(0px)";
-      placeTooltip(evt);
-    })
-    .on("mouseleave", hideTooltip);
-
-  // simple legend
-  const leg = svgT.append("g")
-    .attr("transform", `translate(${margin.left + innerW + 10},${margin.top + 10})`);
-
-  leg.append("line")
-    .attr("x1", 0).attr("x2", 28)
-    .attr("y1", 0).attr("y2", 0)
-    .attr("stroke", "rgba(122,162,255,0.95)")
-    .attr("stroke-width", 3);
-
-  leg.append("text")
-    .attr("x", 34).attr("y", 4)
-    .attr("fill", "#aeb6c6").attr("font-size", 11)
-    .text("Known");
-
-  leg.append("line")
-    .attr("x1", 0).attr("x2", 28)
-    .attr("y1", 18).attr("y2", 18)
-    .attr("stroke", "rgba(122,162,255,0.95)")
-    .attr("stroke-width", 3)
-    .attr("stroke-dasharray", "7,6");
-
-  leg.append("text")
-    .attr("x", 34).attr("y", 22)
-    .attr("fill", "#aeb6c6").attr("font-size", 11)
-    .text("Tentative");
-
-  svgT.append("text")
-    .attr("x", margin.left)
-    .attr("y", 16)
-    .attr("fill", "#aeb6c6")
-    .attr("font-size", 12)
-    .text("Total weekly severity split by status (known solid, tentative dashed).");
-}
-
-
-function drawTypeStacked(tasks) {
-  const svgS = d3.select("#typeStack");
-  if (svgS.empty()) return;
-
-  svgS.selectAll("*").remove();
-
-  const width = 1400;
-  const height = 360;
-  svgS.attr("width", width).attr("height", height);
-
-  if (!tasks || !tasks.length) return;
-
-  const types = uniqueSorted(tasks.map(t => t.type));
-
-  const minISO = d3.min(tasks, d => d.startISO);
-  const maxISO = d3.max(tasks, d => d.finishISO);
-
-  const minDT = startOfISOWeek(DateTime.fromISO(minISO, { zone: "utc" }));
-  const maxDT = startOfISOWeek(DateTime.fromISO(maxISO, { zone: "utc" }));
-
-  const weeks = [];
-  for (let d = minDT; d <= maxDT; d = d.plus({ weeks: 1 })) weeks.push(d.toISODate());
-
-  // aggregate week -> {type: value}
-  const weekMap = new Map();
-  for (const w of weeks) {
-    const obj = { weekISO: w, date: DateTime.fromISO(w, { zone: "utc" }).toJSDate() };
-    for (const ty of types) obj[ty] = 0;
-    weekMap.set(w, obj);
-  }
-
-  for (const t of tasks) {
-    const s = DateTime.fromISO(t.startISO, { zone: "utc" }).startOf("day");
-    const f = DateTime.fromISO(t.finishISO, { zone: "utc" }).startOf("day");
-    if (!s.isValid || !f.isValid) continue;
-
-    for (let d = s; d <= f; d = d.plus({ days: 1 })) {
-      const w = startOfISOWeek(d).toISODate();
-      const row = weekMap.get(w);
-      if (!row) continue;
-      row[t.type] = (row[t.type] || 0) + (t.severityPerDay || 0);
-    }
-  }
-
-  const data = weeks.map(w => weekMap.get(w));
-  const stack = d3.stack().keys(types);
-  const series = stack(data);
-
-  const maxVal = d3.max(series, s => d3.max(s, d => d[1])) || 1;
-
-  const margin = { top: 26, right: 220, bottom: 40, left: 60 };
-  const innerW = width - margin.left - margin.right;
-  const innerH = height - margin.top - margin.bottom;
-
-  const x = d3.scaleTime()
-    .domain([data[0].date, DateTime.fromISO(weeks[weeks.length - 1], { zone: "utc" }).plus({ weeks: 1 }).toJSDate()])
-    .range([0, innerW]);
-
-  const y = d3.scaleLinear().domain([0, maxVal]).nice().range([innerH, 0]);
-
-  const colour = d3.scaleOrdinal()
-    .domain(types)
-    .range(d3.schemeTableau10.concat(d3.schemeSet3).slice(0, Math.max(10, types.length)));
-
-  const g = svgS.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
-
-  g.append("g")
-    .attr("class", "grid")
-    .call(d3.axisLeft(y).ticks(5).tickSize(-innerW).tickFormat(() => ""));
-
-  g.append("g")
-    .attr("class", "axis")
-    .attr("transform", `translate(0,${innerH})`)
-    .call(d3.axisBottom(x).ticks(d3.timeWeek.every(2)).tickFormat(d3.timeFormat("%d %b")));
-
-  g.append("g")
-    .attr("class", "axis")
-    .call(d3.axisLeft(y).ticks(5));
-
-  const area = d3.area()
-    .x(d => x(d.data.date))
-    .y0(d => y(d[0]))
-    .y1(d => y(d[1]))
-    .curve(d3.curveMonotoneX);
-
-  g.append("g")
-    .selectAll("path")
-    .data(series)
-    .enter()
-    .append("path")
-    .attr("d", area)
-    .attr("fill", d => colour(d.key))
-    .attr("opacity", 0.75);
-
-  // hover: invisible rects per week for totals breakdown
-  const hoverW = innerW / Math.max(1, data.length);
-  g.append("g")
-    .selectAll("rect")
-    .data(data)
-    .enter()
-    .append("rect")
-    .attr("x", d => x(d.date))
-    .attr("y", 0)
-    .attr("width", hoverW)
-    .attr("height", innerH)
-    .attr("fill", "transparent")
-    .on("mousemove", function(evt, d) {
-      const dt = DateTime.fromISO(d.weekISO, { zone: "utc" });
-      const total = types.reduce((acc, k) => acc + (d[k] || 0), 0);
-      const top = [...types].sort((a, b) => (d[b] || 0) - (d[a] || 0)).slice(0, 6);
-      tooltip.innerHTML =
-        `<strong>All programmes</strong>\n` +
-        `Week commencing: ${dt.toFormat("dd LLL yyyy")}\n` +
-        `Total severity: ${total.toFixed(0)}\n` +
-        top.map(k => `${k}: ${(d[k] || 0).toFixed(0)}`).join("\n");
-
-      tooltip.style.opacity = "1";
-      tooltip.style.transform = "translateY(0px)";
-      placeTooltip(evt, 380, 260);
-    })
-    .on("mouseleave", hideTooltip);
-
-  // legend
-  const legend = svgS.append("g")
-    .attr("transform", `translate(${margin.left + innerW + 14},${margin.top})`);
-
-  legend.append("text")
-    .attr("x", 0)
-    .attr("y", 0)
-    .attr("fill", "#aeb6c6")
-    .attr("font-size", 12)
-    .text("Task type");
-
-  legend.selectAll("g.item")
-    .data(types)
-    .enter()
-    .append("g")
-    .attr("class", "item")
-    .attr("transform", (d, i) => `translate(0,${16 + i * 16})`)
-    .each(function(d) {
-      const item = d3.select(this);
-      item.append("rect")
-        .attr("x", 0)
-        .attr("y", -10)
-        .attr("width", 10)
-        .attr("height", 10)
-        .attr("rx", 3)
-        .attr("ry", 3)
-        .attr("fill", colour(d));
-      item.append("text")
-        .attr("x", 16)
-        .attr("y", -2)
-        .attr("fill", "#aeb6c6")
-        .attr("font-size", 11)
-        .text(d);
+    const data = weeks.map(w=>({
+      weekISO:w, date:isoToJSDate(w),
+      known: totalsKnown.get(w)||0, tentative: totalsTent.get(w)||0,
+      total: (totalsKnown.get(w)||0)+(totalsTent.get(w)||0)
+    }));
+
+    const maxVal = d3.max(data,d=>d.total)||1;
+    const margin = {top:24, right:140, bottom:36, left:60};
+    const innerW = width-margin.left-margin.right;
+    const innerH = height-margin.top-margin.bottom;
+
+    const x = d3.scaleTime()
+      .domain([data[0].date, DateTime.fromISO(weeks[weeks.length-1],{zone:"utc"}).plus({weeks:1}).toJSDate()])
+      .range([0,innerW]);
+    const y = d3.scaleLinear().domain([0,maxVal]).nice().range([innerH,0]);
+
+    const g = svgT.append("g").attr("transform",`translate(${margin.left},${margin.top})`);
+    addGridAndAxes(g, x, y, innerW, innerH, d3.timeWeek.every(2), 4);
+
+    const line = d3.line().x(d=>x(d.date)).y(d=>y(d.value)).curve(d3.curveMonotoneX);
+    const stroke = "rgba(122,162,255,.95)";
+
+    [["known",false],["tentative",true]].forEach(([key,dashed])=>{
+      const path = g.append("path")
+        .datum(data.map(d=>({...d,value:d[key]})))
+        .attr("fill","none").attr("stroke",stroke).attr("stroke-width",2.5).attr("d",line);
+      if (dashed) path.attr("stroke-dasharray","7,6").attr("opacity",.9);
     });
 
-  svgS.append("text")
-    .attr("x", margin.left)
-    .attr("y", 16)
-    .attr("fill", "#aeb6c6")
-    .attr("font-size", 12)
-    .text("Weekly severity by task type (stacked).");
-}
+    g.selectAll("circle").data(data).enter().append("circle")
+      .attr("cx",d=>x(d.date)).attr("cy",d=>y(d.total)).attr("r",3)
+      .attr("fill","rgba(255,184,107,.90)")
+      .on("mousemove",(evt,d)=>{
+        const dt=DateTime.fromISO(d.weekISO,{zone:"utc"});
+        tooltip.innerHTML = `<strong>All programmes</strong>\nWeek commencing: ${dt.toFormat("dd LLL yyyy")}\nKnown: ${d.known.toFixed(0)}\nTentative: ${d.tentative.toFixed(0)}\nTotal: ${d.total.toFixed(0)}`;
+        tooltip.style.opacity="1"; tooltip.style.transform="translateY(0px)"; placeTooltip(evt);
+      }).on("mouseleave",hideTooltip);
 
-function drawLocationCurves(tasks) {
-  const svgL = d3.select("#locationCurves");
-  if (svgL.empty()) return;
+    const leg = svgT.append("g").attr("transform",`translate(${margin.left+innerW+10},${margin.top+10})`);
+    [[0,"Known",false],[18,"Tentative",true]].forEach(([y,label,dashed])=>{
+      const l = leg.append("line").attr("x1",0).attr("x2",28).attr("y1",y).attr("y2",y)
+        .attr("stroke",stroke).attr("stroke-width",3);
+      if (dashed) l.attr("stroke-dasharray","7,6");
+      leg.append("text").attr("x",34).attr("y",y+4).attr("fill","#aeb6c6").attr("font-size",11).text(label);
+    });
 
-  svgL.selectAll("*").remove();
-
-  const width = 1400;
-  const height = 360;
-  svgL.attr("width", width).attr("height", height);
-
-  if (!tasks || !tasks.length) return;
-
-  const minISO = d3.min(tasks, d => d.startISO);
-  const maxISO = d3.max(tasks, d => d.finishISO);
-
-  const minDT = startOfISOWeek(DateTime.fromISO(minISO, { zone: "utc" }));
-  const maxDT = startOfISOWeek(DateTime.fromISO(maxISO, { zone: "utc" }));
-
-  const weeks = [];
-  for (let d = minDT; d <= maxDT; d = d.plus({ weeks: 1 })) {
-    weeks.push(d.toISODate());
+    svgT.append("text").attr("x",margin.left).attr("y",16).attr("fill","#aeb6c6").attr("font-size",12)
+      .text("Total weekly severity split by status (known solid, tentative dashed).");
   }
 
-  // Aggregate by location-week
-  const totals = new Map(); // `${loc}||${week}` -> value
-  const locTotals = new Map(); // loc -> total
+  // ── Type stacked ─────────────────────────────────────────────────────────────
+  function drawTypeStacked(tasks) {
+    const svgS = d3.select("#typeStack");
+    if (svgS.empty()) return;
+    svgS.selectAll("*").remove();
+    const [width,height]=[1400,360];
+    svgS.attr("width",width).attr("height",height);
+    if (!tasks||!tasks.length) return;
 
-  function locName(t) {
-    const raw = String(t.location || "").trim();
-    return raw ? raw : "Unspecified";
-  }
+    const types = uniqueSorted(tasks.map(t=>t.type));
+    const weeks = buildWeeks(d3.min(tasks,d=>d.startISO), d3.max(tasks,d=>d.finishISO));
+    const weekMap = new Map(weeks.map(w=>[w,{weekISO:w, date:isoToJSDate(w), ...Object.fromEntries(types.map(ty=>[ty,0]))}]));
 
-  for (const t of tasks) {
-    const loc = locName(t);
-    const s = DateTime.fromISO(t.startISO, { zone: "utc" }).startOf("day");
-    const f = DateTime.fromISO(t.finishISO, { zone: "utc" }).startOf("day");
-    if (!s.isValid || !f.isValid) continue;
-
-    for (let d = s; d <= f; d = d.plus({ days: 1 })) {
-      const w = startOfISOWeek(d).toISODate();
-      const k = `${loc}||${w}`;
-      const add = (t.severityPerDay || 0);
-      totals.set(k, (totals.get(k) || 0) + add);
-      locTotals.set(loc, (locTotals.get(loc) || 0) + add);
+    for (const t of tasks) {
+      const s=DateTime.fromISO(t.startISO,{zone:"utc"}).startOf("day");
+      const f=DateTime.fromISO(t.finishISO,{zone:"utc"}).startOf("day");
+      if (!s.isValid||!f.isValid) continue;
+      for (let d=s; d<=f; d=d.plus({days:1})) {
+        const row = weekMap.get(startOfISOWeek(d).toISODate());
+        if (row) row[t.type]=(row[t.type]||0)+(t.severityPerDay||0);
+      }
     }
+
+    const data    = weeks.map(w=>weekMap.get(w));
+    const series  = d3.stack().keys(types)(data);
+    const maxVal  = d3.max(series,s=>d3.max(s,d=>d[1]))||1;
+    const colour  = d3.scaleOrdinal().domain(types).range(d3.schemeTableau10.concat(d3.schemeSet3).slice(0,Math.max(10,types.length)));
+    const margin  = {top:26, right:220, bottom:40, left:60};
+    const innerW  = width-margin.left-margin.right;
+    const innerH  = height-margin.top-margin.bottom;
+
+    const x = d3.scaleTime()
+      .domain([data[0].date, DateTime.fromISO(weeks[weeks.length-1],{zone:"utc"}).plus({weeks:1}).toJSDate()])
+      .range([0,innerW]);
+    const y = d3.scaleLinear().domain([0,maxVal]).nice().range([innerH,0]);
+
+    const g = svgS.append("g").attr("transform",`translate(${margin.left},${margin.top})`);
+    addGridAndAxes(g, x, y, innerW, innerH, d3.timeWeek.every(2), 5);
+
+    g.append("g").selectAll("path").data(series).enter().append("path")
+      .attr("d", d3.area().x(d=>x(d.data.date)).y0(d=>y(d[0])).y1(d=>y(d[1])).curve(d3.curveMonotoneX))
+      .attr("fill",d=>colour(d.key)).attr("opacity",.75);
+
+    const hoverW = innerW/Math.max(1,data.length);
+    g.append("g").selectAll("rect").data(data).enter().append("rect")
+      .attr("x",d=>x(d.date)).attr("y",0).attr("width",hoverW).attr("height",innerH).attr("fill","transparent")
+      .on("mousemove",(evt,d)=>{
+        const dt=DateTime.fromISO(d.weekISO,{zone:"utc"});
+        const total=types.reduce((a,k)=>a+(d[k]||0),0);
+        const top=[...types].sort((a,b)=>(d[b]||0)-(d[a]||0)).slice(0,6);
+        tooltip.innerHTML=`<strong>All programmes</strong>\nWeek commencing: ${dt.toFormat("dd LLL yyyy")}\nTotal severity: ${total.toFixed(0)}\n`+top.map(k=>`${k}: ${(d[k]||0).toFixed(0)}`).join("\n");
+        tooltip.style.opacity="1"; tooltip.style.transform="translateY(0px)"; placeTooltip(evt,380,260);
+      }).on("mouseleave",hideTooltip);
+
+    addRightLegend(svgS, "Task type", types, d=>colour(d), margin, innerW);
+    svgS.append("text").attr("x",margin.left).attr("y",16).attr("fill","#aeb6c6").attr("font-size",12)
+      .text("Weekly severity by task type (stacked).");
   }
 
-  // pick top locations by overall severity, group the rest as "Other"
-  const ranked = Array.from(locTotals.entries()).sort((a, b) => b[1] - a[1]);
-  const topN = 8;
-  const keep = new Set(ranked.slice(0, topN).map(d => d[0]));
-  const hasOther = ranked.length > topN;
+  // ── Location curves ──────────────────────────────────────────────────────────
+  function drawLocationCurves(tasks) {
+    const svgL = d3.select("#locationCurves");
+    if (svgL.empty()) return;
+    svgL.selectAll("*").remove();
+    const [width,height]=[1400,360];
+    svgL.attr("width",width).attr("height",height);
+    if (!tasks||!tasks.length) return;
 
-  const locations = ranked.slice(0, topN).map(d => d[0]);
-  if (hasOther) locations.push("Other");
+    const locName = t => { const r=String(t.location||"").trim(); return r?r:"Unspecified"; };
+    const weeks   = buildWeeks(d3.min(tasks,d=>d.startISO), d3.max(tasks,d=>d.finishISO));
+    const totals  = new Map(), locTotals = new Map();
 
-  // build series
-  const series = locations.map(loc => {
-    const values = weeks.map(w => {
-      if (loc === "Other") {
-        // sum all non-kept locations
-        let v = 0;
-        for (const [name] of ranked.slice(topN)) {
-          v += totals.get(`${name}||${w}`) || 0;
+    for (const t of tasks) {
+      const loc=locName(t);
+      const s=DateTime.fromISO(t.startISO,{zone:"utc"}).startOf("day");
+      const f=DateTime.fromISO(t.finishISO,{zone:"utc"}).startOf("day");
+      if (!s.isValid||!f.isValid) continue;
+      for (let d=s; d<=f; d=d.plus({days:1})) {
+        const w=startOfISOWeek(d).toISODate();
+        const add=t.severityPerDay||0;
+        totals.set(`${loc}||${w}`, (totals.get(`${loc}||${w}`)||0)+add);
+        locTotals.set(loc, (locTotals.get(loc)||0)+add);
+      }
+    }
+
+    const ranked = Array.from(locTotals.entries()).sort((a,b)=>b[1]-a[1]);
+    const topN=8, keep=new Set(ranked.slice(0,topN).map(d=>d[0]));
+    const locations=[...ranked.slice(0,topN).map(d=>d[0]), ...(ranked.length>topN?["Other"]:[])];
+
+    const series = locations.map(loc=>({
+      loc, _key:loc,
+      values: weeks.map(w=>{
+        let v = loc==="Other"
+          ? ranked.slice(topN).reduce((a,[n])=>a+(totals.get(`${n}||${w}`)||0),0)
+          : (totals.get(`${loc}||${w}`)||0);
+        return {weekISO:w, date:isoToJSDate(w), value:v, _key:loc};
+      })
+    }));
+
+    const maxVal=d3.max(series,s=>d3.max(s.values,v=>v.value))||1;
+    const colour=d3.scaleOrdinal().domain(locations).range(d3.schemeTableau10.concat(d3.schemeSet3).slice(0,Math.max(10,locations.length)));
+    const margin={top:30,right:220,bottom:40,left:60};
+    const innerW=width-margin.left-margin.right, innerH=height-margin.top-margin.bottom;
+
+    const x=d3.scaleTime().domain([isoToJSDate(weeks[0]),DateTime.fromISO(weeks[weeks.length-1],{zone:"utc"}).plus({weeks:1}).toJSDate()]).range([0,innerW]);
+    const y=d3.scaleLinear().domain([0,maxVal]).nice().range([innerH,0]);
+
+    const g=svgL.append("g").attr("transform",`translate(${margin.left},${margin.top})`);
+    addGridAndAxes(g,x,y,innerW,innerH,d3.timeWeek.every(2),5);
+    addLinesAndDots(g,x,y,series,"value",d=>colour(d._key),(evt,d)=>{
+      const dt=DateTime.fromISO(d.weekISO,{zone:"utc"});
+      tooltip.innerHTML=`<strong>${d._key}</strong>\nWeek commencing: ${dt.toFormat("dd LLL yyyy")}\nWeekly severity: ${d.value.toFixed(0)}`;
+      tooltip.style.opacity="1"; tooltip.style.transform="translateY(0px)"; placeTooltip(evt);
+    });
+    addRightLegend(svgL,"Locations",locations,d=>colour(d),margin,innerW);
+    svgL.append("text").attr("x",margin.left).attr("y",18).attr("fill","#aeb6c6").attr("font-size",12)
+      .text("Weekly severity by location (top locations).");
+  }
+
+  // ── Theme bars ───────────────────────────────────────────────────────────────
+  function drawThemeBars(tasks) {
+    const svgTB = d3.select("#themeBars");
+    if (svgTB.empty()) return;
+    svgTB.selectAll("*").remove();
+    const [width,height]=[1400,320];
+    svgTB.attr("width",width).attr("height",height);
+    if (!tasks||!tasks.length) return;
+
+    const totals = new Map();
+    for (const t of tasks) {
+      const themes=(t.themes&&t.themes.length)?t.themes:[];
+      if (!themes.length) continue;
+      const s=DateTime.fromISO(t.startISO,{zone:"utc"}).startOf("day");
+      const f=DateTime.fromISO(t.finishISO,{zone:"utc"}).startOf("day");
+      if (!s.isValid||!f.isValid) continue;
+      const days=Math.max(1,Math.floor(f.diff(s,"days").days)+1);
+      const add=(t.severityPerDay||0)*days;
+      for (const th of themes) totals.set(th,(totals.get(th)||0)+add);
+    }
+
+    const rows = Array.from(totals.entries()).map(([theme,value])=>({theme,value})).sort((a,b)=>b.value-a.value).slice(0,18);
+    if (!rows.length) {
+      svgTB.append("text").attr("x",16).attr("y",28).attr("fill","#aeb6c6").attr("font-size",12).text("No keywords found (add a Keyword column)."); return;
+    }
+
+    const maxVal=d3.max(rows,d=>d.value)||1;
+    const margin={top:26,right:20,bottom:24,left:240};
+    const innerW=width-margin.left-margin.right, innerH=height-margin.top-margin.bottom;
+
+    const x=d3.scaleLinear().domain([0,maxVal]).nice().range([0,innerW]);
+    const y=d3.scaleBand().domain(rows.map(d=>d.theme)).range([0,innerH]).padding(0.18);
+
+    const g=svgTB.append("g").attr("transform",`translate(${margin.left},${margin.top})`);
+    g.append("g").attr("class","grid").call(d3.axisBottom(x).ticks(5).tickSize(innerH).tickFormat(()=>"")).selectAll("line").attr("transform",`translate(0,${-innerH})`);
+    g.append("g").attr("class","axis").call(d3.axisLeft(y).tickSize(0));
+    g.append("g").attr("class","axis").attr("transform",`translate(0,${innerH})`).call(d3.axisBottom(x).ticks(5));
+
+    g.selectAll("rect").data(rows).enter().append("rect")
+      .attr("x",0).attr("y",d=>y(d.theme)).attr("height",y.bandwidth())
+      .attr("width",d=>Math.max(1,x(d.value))).attr("rx",6).attr("ry",6)
+      .attr("fill","rgba(122,162,255,.60)").attr("stroke","rgba(0,0,0,.35)").attr("stroke-width",1)
+      .on("mousemove",(evt,d)=>{
+        tooltip.innerHTML=`<strong>${escapeHtml(d.theme)}</strong>\nTotal severity (task-days weighted): ${d.value.toFixed(0)}`;
+        tooltip.style.opacity="1"; tooltip.style.transform="translateY(0px)"; placeTooltip(evt);
+      }).on("mouseleave",hideTooltip);
+
+    svgTB.append("text").attr("x",margin.left).attr("y",18).attr("fill","#aeb6c6").attr("font-size",12).text("Top themes (ranked by total severity).");
+  }
+
+  // ── Theme trends (line chart) ────────────────────────────────────────────────
+  function drawThemeTrends(tasks) {
+    const svgTT = d3.select("#themeTrends");
+    if (svgTT.empty()) return;
+    svgTT.selectAll("*").remove();
+    const [width,height]=[1400,360];
+    svgTT.attr("width",width).attr("height",height);
+    if (!tasks||!tasks.length) return;
+
+    // Top themes by total severity
+    const totals=new Map();
+    for (const t of tasks) {
+      const themes=(t.themes&&t.themes.length)?t.themes:[];
+      const s=DateTime.fromISO(t.startISO,{zone:"utc"}).startOf("day");
+      const f=DateTime.fromISO(t.finishISO,{zone:"utc"}).startOf("day");
+      if (!s.isValid||!f.isValid) continue;
+      const add=(t.severityPerDay||0)*(Math.max(1,Math.floor(f.diff(s,"days").days)+1));
+      for (const th of themes) totals.set(th,(totals.get(th)||0)+add);
+    }
+    const themesTop = Array.from(totals.entries()).sort((a,b)=>b[1]-a[1]).slice(0,8).map(d=>d[0]);
+    if (!themesTop.length) {
+      svgTT.append("text").attr("x",16).attr("y",28).attr("fill","#aeb6c6").attr("font-size",12).text("No keywords found (add a Keyword column)."); return;
+    }
+
+    const weeks  = buildWeeks(d3.min(tasks,d=>d.startISO), d3.max(tasks,d=>d.finishISO));
+    const topSet = new Set(themesTop);
+    const wkTotals = new Map();
+    for (const t of tasks) {
+      const used=(t.themes||[]).filter(th=>topSet.has(th));
+      if (!used.length) continue;
+      const s=DateTime.fromISO(t.startISO,{zone:"utc"}).startOf("day");
+      const f=DateTime.fromISO(t.finishISO,{zone:"utc"}).startOf("day");
+      if (!s.isValid||!f.isValid) continue;
+      for (let d=s; d<=f; d=d.plus({days:1})) {
+        const w=startOfISOWeek(d).toISODate();
+        for (const th of used) {
+          const k=`${th}||${w}`;
+          wkTotals.set(k,(wkTotals.get(k)||0)+(t.severityPerDay||0));
         }
-        return { weekISO: w, date: DateTime.fromISO(w, { zone: "utc" }).toJSDate(), value: v };
       }
-      return {
-        weekISO: w,
-        date: DateTime.fromISO(w, { zone: "utc" }).toJSDate(),
-        value: totals.get(`${loc}||${w}`) || 0
-      };
+    }
+
+    const series = themesTop.map(th=>({
+      theme:th, _key:th,
+      values: weeks.map(w=>({weekISO:w, date:isoToJSDate(w), value:wkTotals.get(`${th}||${w}`)||0, _key:th}))
+    }));
+
+    const maxVal=d3.max(series,s=>d3.max(s.values,v=>v.value))||1;
+    const colour=d3.scaleOrdinal().domain(themesTop).range(d3.schemeTableau10.concat(d3.schemeSet3).slice(0,Math.max(10,themesTop.length)));
+    const margin={top:30,right:220,bottom:40,left:60};
+    const innerW=width-margin.left-margin.right, innerH=height-margin.top-margin.bottom;
+
+    const x=d3.scaleTime().domain([isoToJSDate(weeks[0]),DateTime.fromISO(weeks[weeks.length-1],{zone:"utc"}).plus({weeks:1}).toJSDate()]).range([0,innerW]);
+    const y=d3.scaleLinear().domain([0,maxVal]).nice().range([innerH,0]);
+
+    const g=svgTT.append("g").attr("transform",`translate(${margin.left},${margin.top})`);
+    addGridAndAxes(g,x,y,innerW,innerH,d3.timeWeek.every(2),5);
+    addLinesAndDots(g,x,y,series,"value",d=>colour(d._key),(evt,d)=>{
+      const dt=DateTime.fromISO(d.weekISO,{zone:"utc"});
+      tooltip.innerHTML=`<strong>${escapeHtml(d._key)}</strong>\nWeek commencing: ${dt.toFormat("dd LLL yyyy")}\nWeekly severity: ${d.value.toFixed(0)}`;
+      tooltip.style.opacity="1"; tooltip.style.transform="translateY(0px)"; placeTooltip(evt);
     });
-    return { loc, values };
-  });
+    addRightLegend(svgTT,"Keywords",themesTop,d=>colour(d),margin,innerW);
+    svgTT.append("text").attr("x",margin.left).attr("y",18).attr("fill","#aeb6c6").attr("font-size",12).text("Weekly severity by theme (top themes).");
+  }
 
-  const maxVal = d3.max(series, s => d3.max(s.values, v => v.value)) || 1;
+  // ── Keyword overlaps ─────────────────────────────────────────────────────────
+  function drawKeywordOverlaps(tasks) {
+    const el   = $("keywordOverlapBody");
+    const meta = $("keywordMeta");
+    if (!el) return;
+    const windowDays = Math.max(0,Math.round(Number(elOverlapWindow&&elOverlapWindow.value?elOverlapWindow.value:14)));
 
-  const margin = { top: 30, right: 220, bottom: 40, left: 60 };
-  const innerW = width - margin.left - margin.right;
-  const innerH = height - margin.top - margin.bottom;
-
-  const x = d3.scaleTime()
-    .domain([DateTime.fromISO(weeks[0], { zone: "utc" }).toJSDate(),
-             DateTime.fromISO(weeks[weeks.length - 1], { zone: "utc" }).plus({ weeks: 1 }).toJSDate()])
-    .range([0, innerW]);
-
-  const y = d3.scaleLinear().domain([0, maxVal]).nice().range([innerH, 0]);
-
-  const g = svgL.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
-
-  g.append("g")
-    .attr("class", "grid")
-    .call(d3.axisLeft(y).ticks(5).tickSize(-innerW).tickFormat(() => ""));
-
-  g.append("g")
-    .attr("class", "axis")
-    .attr("transform", `translate(0,${innerH})`)
-    .call(d3.axisBottom(x).ticks(d3.timeWeek.every(2)).tickFormat(d3.timeFormat("%d %b")));
-
-  g.append("g")
-    .attr("class", "axis")
-    .call(d3.axisLeft(y).ticks(5));
-
-  const line = d3.line()
-    .x(d => x(d.date))
-    .y(d => y(d.value))
-    .curve(d3.curveMonotoneX);
-
-  const colour = d3.scaleOrdinal()
-    .domain(locations)
-    .range(d3.schemeTableau10.concat(d3.schemeSet3).slice(0, Math.max(10, locations.length)));
-
-  const linesG = g.append("g");
-
-  linesG.selectAll("path")
-    .data(series)
-    .enter()
-    .append("path")
-    .attr("fill", "none")
-    .attr("stroke-width", 2)
-    .attr("stroke", d => colour(d.loc))
-    .attr("d", d => line(d.values));
-
-  // points for hover
-  const points = linesG.selectAll("g.points")
-    .data(series)
-    .enter()
-    .append("g")
-    .attr("class", "points");
-
-  points.selectAll("circle")
-    .data(d => d.values.map(v => ({ ...v, loc: d.loc })))
-    .enter()
-    .append("circle")
-    .attr("cx", d => x(d.date))
-    .attr("cy", d => y(d.value))
-    .attr("r", 3)
-    .attr("fill", d => colour(d.loc))
-    .on("mousemove", function(evt, d) {
-      const dt = DateTime.fromISO(d.weekISO, { zone: "utc" });
-
-      tooltip.innerHTML =
-        `<strong>${d.loc}</strong>\n` +
-        `Week commencing: ${dt.toFormat("dd LLL yyyy")}\n` +
-        `Weekly severity: ${d.value.toFixed(0)}`;
-
-      tooltip.style.opacity = "1";
-      tooltip.style.transform = "translateY(0px)";
-      placeTooltip(evt);
-    })
-    .on("mouseleave", hideTooltip);
-
-  // legend (right side)
-  const legend = svgL.append("g")
-    .attr("transform", `translate(${margin.left + innerW + 14},${margin.top})`);
-
-  legend.append("text")
-    .attr("x", 0)
-    .attr("y", 0)
-    .attr("fill", "#aeb6c6")
-    .attr("font-size", 12)
-    .text("Locations");
-
-  const legendItems = legend.selectAll("g.item")
-    .data(locations)
-    .enter()
-    .append("g")
-    .attr("class", "item")
-    .attr("transform", (d, i) => `translate(0,${16 + i * 16})`);
-
-  legendItems.append("rect")
-    .attr("x", 0)
-    .attr("y", -10)
-    .attr("width", 10)
-    .attr("height", 10)
-    .attr("rx", 3)
-    .attr("ry", 3)
-    .attr("fill", d => colour(d));
-
-  legendItems.append("text")
-    .attr("x", 16)
-    .attr("y", -2)
-    .attr("fill", "#aeb6c6")
-    .attr("font-size", 11)
-    .text(d => d);
-
-  svgL.append("text")
-    .attr("x", margin.left)
-    .attr("y", 18)
-    .attr("fill", "#aeb6c6")
-    .attr("font-size", 12)
-    .text("Weekly severity by location (top locations).");
-}
-
-function drawThemeBars(tasks) {
-  const svgTB = d3.select("#themeBars");
-  if (svgTB.empty()) return;
-
-  svgTB.selectAll("*").remove();
-
-  const width = 1400;
-  const height = 320;
-  svgTB.attr("width", width).attr("height", height);
-
-  if (!tasks || !tasks.length) return;
-
-  // Totals: sum(severityPerDay * taskDays) into each theme
-  const totals = new Map(); // theme -> total severity
-  for (const t of tasks) {
-    const themes = (t.themes && t.themes.length) ? t.themes : [];
-    if (!themes.length) continue;
-
-    const s = DateTime.fromISO(t.startISO, { zone: "utc" }).startOf("day");
-    const f = DateTime.fromISO(t.finishISO, { zone: "utc" }).startOf("day");
-    if (!s.isValid || !f.isValid) continue;
-
-    const days = Math.max(1, Math.floor(f.diff(s, "days").days) + 1);
-    const add = (t.severityPerDay || 0) * days;
-
-    for (const th of themes) {
-      totals.set(th, (totals.get(th) || 0) + add);
+    if (!tasks||!tasks.length) {
+      el.innerHTML=`<div class="note">No tasks to analyse (check filters).</div>`;
+      drawKeywordOverlapTimeline([],windowDays);
+      if (meta) meta.innerHTML="";
+      return;
     }
-  }
 
-  const rows = Array.from(totals.entries())
-    .map(([theme, value]) => ({ theme, value }))
-    .sort((a, b) => b.value - a.value)
-    .slice(0, 18);
-
-  if (!rows.length) {
-    svgTB.append("text")
-      .attr("x", 16)
-      .attr("y", 28)
-      .attr("fill", "#aeb6c6")
-      .attr("font-size", 12)
-      .text("No keywords found (add a Keyword column).");
-    return;
-  }
-
-  const maxVal = d3.max(rows, d => d.value) || 1;
-
-  const margin = { top: 26, right: 20, bottom: 24, left: 240 };
-  const innerW = width - margin.left - margin.right;
-  const innerH = height - margin.top - margin.bottom;
-
-  const x = d3.scaleLinear().domain([0, maxVal]).nice().range([0, innerW]);
-  const y = d3.scaleBand().domain(rows.map(d => d.theme)).range([0, innerH]).padding(0.18);
-
-  const g = svgTB.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
-
-  g.append("g")
-    .attr("class", "grid")
-    .call(d3.axisBottom(x).ticks(5).tickSize(innerH).tickFormat(() => ""))
-    .selectAll("line")
-    .attr("transform", `translate(0,${-innerH})`);
-
-  g.append("g")
-    .attr("class", "axis")
-    .call(d3.axisLeft(y).tickSize(0));
-
-  g.append("g")
-    .attr("class", "axis")
-    .attr("transform", `translate(0,${innerH})`)
-    .call(d3.axisBottom(x).ticks(5));
-
-  g.selectAll("rect")
-    .data(rows)
-    .enter()
-    .append("rect")
-    .attr("x", 0)
-    .attr("y", d => y(d.theme))
-    .attr("height", y.bandwidth())
-    .attr("width", d => Math.max(1, x(d.value)))
-    .attr("rx", 6)
-    .attr("ry", 6)
-    .attr("fill", "rgba(122,162,255,0.60)")
-    .attr("stroke", "rgba(0,0,0,0.35)")
-    .attr("stroke-width", 1)
-    .on("mousemove", function(evt, d) {
-      tooltip.innerHTML =
-        `<strong>${escapeHtml(d.theme)}</strong>\n` +
-        `Total severity (task-days weighted): ${d.value.toFixed(0)}`;
-
-      tooltip.style.opacity = "1";
-      tooltip.style.transform = "translateY(0px)";
-      placeTooltip(evt);
-    })
-    .on("mouseleave", hideTooltip);
-
-  svgTB.append("text")
-    .attr("x", margin.left)
-    .attr("y", 18)
-    .attr("fill", "#aeb6c6")
-    .attr("font-size", 12)
-    .text("Top themes (ranked by total severity).");
-}
-
-function drawThemeTrends(tasks) {
-  const svgTT = d3.select("#themeTrends");
-  if (svgTT.empty()) return;
-
-  svgTT.selectAll("*").remove();
-
-  const width = 1400;
-  const height = 360;
-  svgTT.attr("width", width).attr("height", height);
-
-  if (!tasks || !tasks.length) return;
-
-  // Determine top themes by total severity first
-  const totals = new Map();
-  for (const t of tasks) {
-    const themes = (t.themes && t.themes.length) ? t.themes : [];
-    if (!themes.length) continue;
-
-    const s = DateTime.fromISO(t.startISO, { zone: "utc" }).startOf("day");
-    const f = DateTime.fromISO(t.finishISO, { zone: "utc" }).startOf("day");
-    if (!s.isValid || !f.isValid) continue;
-
-    const days = Math.max(1, Math.floor(f.diff(s, "days").days) + 1);
-    const add = (t.severityPerDay || 0) * days;
-
-    for (const th of themes) totals.set(th, (totals.get(th) || 0) + add);
-  }
-
-  const ranked = Array.from(totals.entries()).sort((a, b) => b[1] - a[1]);
-  const topN = 8;
-  const themesTop = ranked.slice(0, topN).map(d => d[0]);
-  if (!themesTop.length) {
-    svgTT.append("text")
-      .attr("x", 16)
-      .attr("y", 28)
-      .attr("fill", "#aeb6c6")
-      .attr("font-size", 12)
-      .text("No keywords found (add a Keyword column).");
-    return;
-  }
-
-  const minISO = d3.min(tasks, d => d.startISO);
-  const maxISO = d3.max(tasks, d => d.finishISO);
-
-  const minDT = startOfISOWeek(DateTime.fromISO(minISO, { zone: "utc" }));
-  const maxDT = startOfISOWeek(DateTime.fromISO(maxISO, { zone: "utc" }));
-
-  const weeks = [];
-  for (let d = minDT; d <= maxDT; d = d.plus({ weeks: 1 })) weeks.push(d.toISODate());
-
-  const wkTotals = new Map(); // `${theme}||${week}` -> value
-
-  for (const t of tasks) {
-    const themes = (t.themes && t.themes.length) ? t.themes : [];
-    if (!themes.length) continue;
-
-    // only accumulate for top themes to keep chart readable
-    const used = themes.filter(th => themesTop.includes(th));
-    if (!used.length) continue;
-
-    const s = DateTime.fromISO(t.startISO, { zone: "utc" }).startOf("day");
-    const f = DateTime.fromISO(t.finishISO, { zone: "utc" }).startOf("day");
-    if (!s.isValid || !f.isValid) continue;
-
-    for (let d = s; d <= f; d = d.plus({ days: 1 })) {
-      const w = startOfISOWeek(d).toISODate();
-      const add = (t.severityPerDay || 0);
-      for (const th of used) {
-        const k = `${th}||${w}`;
-        wkTotals.set(k, (wkTotals.get(k) || 0) + add);
+    // Group tasks by keyword
+    const byKeyword = new Map();
+    for (const t of tasks) {
+      for (const kw of (t.keywords||[])) {
+        const k=String(kw||"").trim(); if (!k) continue;
+        if (!byKeyword.has(k)) byKeyword.set(k,[]);
+        byKeyword.get(k).push(t);
       }
     }
-  }
 
-  const series = themesTop.map(th => ({
-    theme: th,
-    values: weeks.map(w => ({
-      weekISO: w,
-      date: DateTime.fromISO(w, { zone: "utc" }).toJSDate(),
-      value: wkTotals.get(`${th}||${w}`) || 0
-    }))
-  }));
-
-  const maxVal = d3.max(series, s => d3.max(s.values, v => v.value)) || 1;
-
-  const margin = { top: 30, right: 220, bottom: 40, left: 60 };
-  const innerW = width - margin.left - margin.right;
-  const innerH = height - margin.top - margin.bottom;
-
-  const x = d3.scaleTime()
-    .domain([DateTime.fromISO(weeks[0], { zone: "utc" }).toJSDate(),
-             DateTime.fromISO(weeks[weeks.length - 1], { zone: "utc" }).plus({ weeks: 1 }).toJSDate()])
-    .range([0, innerW]);
-
-  const y = d3.scaleLinear().domain([0, maxVal]).nice().range([innerH, 0]);
-
-  const g = svgTT.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
-
-  g.append("g")
-    .attr("class", "grid")
-    .call(d3.axisLeft(y).ticks(5).tickSize(-innerW).tickFormat(() => ""));
-
-  g.append("g")
-    .attr("class", "axis")
-    .attr("transform", `translate(0,${innerH})`)
-    .call(d3.axisBottom(x).ticks(d3.timeWeek.every(2)).tickFormat(d3.timeFormat("%d %b")));
-
-  g.append("g")
-    .attr("class", "axis")
-    .call(d3.axisLeft(y).ticks(5));
-
-  const line = d3.line()
-    .x(d => x(d.date))
-    .y(d => y(d.value))
-    .curve(d3.curveMonotoneX);
-
-  const colour = d3.scaleOrdinal()
-    .domain(themesTop)
-    .range(d3.schemeTableau10.concat(d3.schemeSet3).slice(0, Math.max(10, themesTop.length)));
-
-  const linesG = g.append("g");
-
-  linesG.selectAll("path")
-    .data(series)
-    .enter()
-    .append("path")
-    .attr("fill", "none")
-    .attr("stroke-width", 2)
-    .attr("stroke", d => colour(d.theme))
-    .attr("d", d => line(d.values));
-
-  const points = linesG.selectAll("g.points")
-    .data(series)
-    .enter()
-    .append("g")
-    .attr("class", "points");
-
-  points.selectAll("circle")
-    .data(d => d.values.map(v => ({ ...v, theme: d.theme })))
-    .enter()
-    .append("circle")
-    .attr("cx", d => x(d.date))
-    .attr("cy", d => y(d.value))
-    .attr("r", 3)
-    .attr("fill", d => colour(d.theme))
-    .on("mousemove", function(evt, d) {
-      const dt = DateTime.fromISO(d.weekISO, { zone: "utc" });
-
-      tooltip.innerHTML =
-        `<strong>${escapeHtml(d.theme)}</strong>\n` +
-        `Week commencing: ${dt.toFormat("dd LLL yyyy")}\n` +
-        `Weekly severity: ${d.value.toFixed(0)}`;
-
-      tooltip.style.opacity = "1";
-      tooltip.style.transform = "translateY(0px)";
-      placeTooltip(evt);
-    })
-    .on("mouseleave", hideTooltip);
-
-  const legend = svgTT.append("g")
-    .attr("transform", `translate(${margin.left + innerW + 14},${margin.top})`);
-
-  legend.append("text")
-    .attr("x", 0)
-    .attr("y", 0)
-    .attr("fill", "#aeb6c6")
-    .attr("font-size", 12)
-    .text("Keywords");
-
-  const legendItems = legend.selectAll("g.item")
-    .data(themesTop)
-    .enter()
-    .append("g")
-    .attr("class", "item")
-    .attr("transform", (d, i) => `translate(0,${16 + i * 16})`);
-
-  legendItems.append("rect")
-    .attr("x", 0)
-    .attr("y", -10)
-    .attr("width", 10)
-    .attr("height", 10)
-    .attr("rx", 3)
-    .attr("ry", 3)
-    .attr("fill", d => colour(d));
-
-  legendItems.append("text")
-    .attr("x", 16)
-    .attr("y", -2)
-    .attr("fill", "#aeb6c6")
-    .attr("font-size", 11)
-    .text(d => d);
-
-  svgTT.append("text")
-    .attr("x", margin.left)
-    .attr("y", 18)
-    .attr("fill", "#aeb6c6")
-    .attr("font-size", 12)
-    .text("Weekly severity by theme (top themes).");
-}
-
-
-function drawKeywordOverlaps(tasks) {
-  const el = document.getElementById("keywordOverlapBody");
-  const meta = document.getElementById("keywordMeta");
-  if (!el) return;
-
-  const windowDays = Math.max(0, Math.round(Number(elOverlapWindow && elOverlapWindow.value ? elOverlapWindow.value : 14)));
-
-  if (!tasks || tasks.length === 0) {
-    el.innerHTML = `<div class="note">No tasks to analyse (check filters).</div>`;
-    drawKeywordOverlapTimeline([], windowDays);
-    if (meta) meta.innerHTML = "";
-    return;
-  }
-
-  // Build keyword -> tasks map
-  const byKeyword = new Map();
-  for (const t of tasks) {
-    const kws = (t.keywords && t.keywords.length) ? t.keywords : [];
-    if (!kws.length) continue;
-    for (const kw of kws) {
-      const k = String(kw || "").trim();
-      if (!k) continue;
-      if (!byKeyword.has(k)) byKeyword.set(k, []);
-      byKeyword.get(k).push(t);
-    }
-  }
-
-  // Build clusters per keyword by scanning sorted tasks (efficient, no O(n^2))
-  const clusters = [];
-
-  for (const [kw, list] of byKeyword.entries()) {
-    const items = list
-      .filter(t => t.startISO && t.finishISO)
-      .slice()
-      .sort((a, b) => a.startISO.localeCompare(b.startISO));
-
-    if (items.length < 2) continue;
-
-    // cluster while expanded ranges overlap
-    let cur = null;
-
-    for (const t of items) {
-      const tS = DateTime.fromISO(t.startISO, { zone: "utc" }).startOf("day");
-      const tF = DateTime.fromISO(t.finishISO, { zone: "utc" }).startOf("day");
-      if (!tS.isValid || !tF.isValid) continue;
-
-      const tSx = tS.minus({ days: windowDays });
-      const tFx = tF.plus({ days: windowDays });
-
-      if (!cur) {
-        cur = {
-          keyword: kw,
-          minStart: tS,
-          maxFinish: tF,
-          maxFinishExpanded: tFx,
-          tasks: [t]
-        };
-        continue;
+    // Build clusters per keyword
+    const clusters=[];
+    for (const [kw,list] of byKeyword.entries()) {
+      const items=list.filter(t=>t.startISO&&t.finishISO).slice().sort((a,b)=>a.startISO.localeCompare(b.startISO));
+      if (items.length<2) continue;
+      let cur=null;
+      for (const t of items) {
+        const tS=DateTime.fromISO(t.startISO,{zone:"utc"}).startOf("day");
+        const tF=DateTime.fromISO(t.finishISO,{zone:"utc"}).startOf("day");
+        if (!tS.isValid||!tF.isValid) continue;
+        const tSx=tS.minus({days:windowDays}), tFx=tF.plus({days:windowDays});
+        if (!cur) { cur={keyword:kw,minStart:tS,maxFinish:tF,maxFinishExpanded:tFx,tasks:[t]}; continue; }
+        if (tSx<=cur.maxFinishExpanded) {
+          cur.tasks.push(t);
+          if (tS<cur.minStart) cur.minStart=tS;
+          if (tF>cur.maxFinish) cur.maxFinish=tF;
+          if (tFx>cur.maxFinishExpanded) cur.maxFinishExpanded=tFx;
+        } else {
+          clusters.push(cur);
+          cur={keyword:kw,minStart:tS,maxFinish:tF,maxFinishExpanded:tFx,tasks:[t]};
+        }
       }
-
-      // If this task overlaps the current cluster expanded span, merge; otherwise flush and start new
-      if (tSx <= cur.maxFinishExpanded) {
-        cur.tasks.push(t);
-        if (tS < cur.minStart) cur.minStart = tS;
-        if (tF > cur.maxFinish) cur.maxFinish = tF;
-        if (tFx > cur.maxFinishExpanded) cur.maxFinishExpanded = tFx;
-      } else {
-        clusters.push(cur);
-        cur = {
-          keyword: kw,
-          minStart: tS,
-          maxFinish: tF,
-          maxFinishExpanded: tFx,
-          tasks: [t]
-        };
-      }
+      if (cur) clusters.push(cur);
     }
-    if (cur) clusters.push(cur);
+
+    // Summarise and filter to cross-programme overlaps
+    const rows = clusters.map(c=>{
+      const programmes=Array.from(new Set(c.tasks.map(t=>t.course||"—")));
+      const modules=Array.from(new Set(c.tasks.map(t=>t.moduleName).filter(Boolean)));
+      const items=c.tasks.map(t=>({
+        programme:t.course||"—",
+        date:`${t.startISO||"—"} → ${t.finishISO||"—"}`,
+        task:[t.moduleName,t.type].filter(Boolean).join(" · ")||"—",
+        students:(t.studentsBucket&&String(t.studentsBucket).trim())?String(t.studentsBucket).trim():"—",
+        keyword:c.keyword
+      })).sort((a,b)=>a.programme.localeCompare(b.programme,"en-GB",{numeric:true})||a.date.localeCompare(b.date));
+      return {
+        keyword:c.keyword, programmes, programmeCount:programmes.length,
+        taskCount:c.tasks.length, dateFrom:c.minStart.toISODate(), dateTo:c.maxFinish.toISODate(),
+        modules:modules.slice(0,10), items,
+        severity:c.tasks.reduce((acc,t)=>{
+          const s=DateTime.fromISO(t.startISO,{zone:"utc"}).startOf("day");
+          const f=DateTime.fromISO(t.finishISO,{zone:"utc"}).startOf("day");
+          const days=(s.isValid&&f.isValid)?Math.max(1,Math.floor(f.diff(s,"days").days)+1):1;
+          return acc+(t.severityPerDay||0)*days;
+        },0)
+      };
+    }).filter(r=>r.programmeCount>=2)
+      .sort((a,b)=>(b.programmeCount-a.programmeCount)||(b.taskCount-a.taskCount)||(b.severity-a.severity)||a.keyword.localeCompare(b.keyword,"en-GB"));
+
+    const keywordsWithOverlaps=new Set(rows.map(r=>r.keyword));
+    if (meta) meta.innerHTML=
+      `<span class="pill"><strong>${rows.length}</strong> overlap clusters</span>`+
+      `<span class="pill"><strong>${keywordsWithOverlaps.size}</strong> keywords involved</span>`+
+      `<span class="pill">window: ±${windowDays} days</span>`;
+
+    if (!rows.length) {
+      el.innerHTML=`<div class="note">No cross-programme keyword overlaps found (try widening the window, or check the keyword column).</div>`;
+      drawKeywordOverlapTimeline([],windowDays);
+      return;
+    }
+
+    const top=rows.slice(0,30);
+    el.innerHTML=`
+      <table class="stats-table">
+        <thead><tr><th>Keyword</th><th class="num">Programmes</th><th class="num">Tasks</th><th>Date span</th><th>Programmes involved</th><th>Example modules</th></tr></thead>
+        <tbody>${top.map(r=>`<tr>
+          <td>${escapeHtml(r.keyword)}</td>
+          <td class="num">${r.programmeCount}</td>
+          <td class="num">${r.taskCount}</td>
+          <td style="color:#aeb6c6;">${escapeHtml(r.dateFrom)} → ${escapeHtml(r.dateTo)}</td>
+          <td>${escapeHtml(r.programmes.slice(0,6).join(", "))}${r.programmes.length>6?"…":""}</td>
+          <td style="color:#aeb6c6;">${escapeHtml(r.modules.join(", "))}${r.modules.length>=10?"…":""}</td>
+        </tr>`).join("")}</tbody>
+      </table>
+      <div class="note">Showing the top ${top.length} clusters. Increase or decrease the window to change what counts as overlapping.</div>`;
+
+    drawKeywordOverlapTimeline(rows, windowDays);
   }
 
-  // Summarise clusters and keep only overlaps across programmes (2+ distinct courses)
-  const rows = clusters.map(c => {
-    const programmes = Array.from(new Set(c.tasks.map(t => t.course || "—")));
-    const modules = Array.from(new Set(c.tasks.map(t => t.moduleName).filter(Boolean)));
+  function drawKeywordOverlapTimeline(rows, windowDays) {
+    const svgEl = $("keywordOverlapViz");
+    if (!svgEl) return;
+    while (svgEl.firstChild) svgEl.removeChild(svgEl.firstChild);
 
-    // Keep per-task detail for richer hover tooltips in the overlap timeline.
-    // Each entry corresponds to one task contributing to this cluster.
-    const items = c.tasks.map(t => {
-      const programme = t.course || "—";
-      const date = `${t.startISO || "—"} → ${t.finishISO || "—"}`;
-      const task = [t.moduleName, t.type].filter(Boolean).join(" · ") || "—";
-      const students = (t.studentsBucket != null && String(t.studentsBucket).trim()) ? String(t.studentsBucket).trim() : "—";
-      return { programme, date, task, students, keyword: c.keyword };
-    }).sort((a, b) =>
-      a.programme.localeCompare(b.programme, "en-GB", { numeric: true }) ||
-      a.date.localeCompare(b.date, "en-GB", { numeric: true }) ||
-      a.task.localeCompare(b.task, "en-GB", { numeric: true })
-    );
-    return {
-      keyword: c.keyword,
-      programmes,
-      programmeCount: programmes.length,
-      taskCount: c.tasks.length,
-      dateFrom: c.minStart.toISODate(),
-      dateTo: c.maxFinish.toISODate(),
-      modules: modules.slice(0, 10), // keep table compact
-      items,
-      severity: c.tasks.reduce((acc, t) => {
-        const s = DateTime.fromISO(t.startISO, { zone: "utc" }).startOf("day");
-        const f = DateTime.fromISO(t.finishISO, { zone: "utc" }).startOf("day");
-        const days = (s.isValid && f.isValid) ? (Math.max(1, Math.floor(f.diff(s, "days").days) + 1)) : 1;
-        return acc + (t.severityPerDay || 0) * days;
-      }, 0)
-    };
-  }).filter(r => r.programmeCount >= 2);
+    if (!rows||!rows.length) {
+      d3.select(svgEl).append("text").attr("x",18).attr("y",26).attr("fill","#aeb6c6").attr("font-size",12).text("No overlap clusters to plot.");
+      return;
+    }
 
-  rows.sort((a, b) => (b.programmeCount - a.programmeCount) || (b.taskCount - a.taskCount) || (b.severity - a.severity) || a.keyword.localeCompare(b.keyword, "en-GB"));
+    const byKw = d3.rollups(rows, v=>({n:v.length, severity:d3.sum(v,d=>d.severity||0), programmesMax:d3.max(v,d=>d.programmeCount||0)}), d=>d.keyword)
+      .sort((a,b)=>(b[1].n-a[1].n)||(b[1].severity-a[1].severity)||String(a[0]).localeCompare(String(b[0]),"en-GB"));
 
-  const keywordsWithOverlaps = new Set(rows.map(r => r.keyword));
+    const keepKeywords = new Set(byKw.slice(0,25).map(d=>d[0]));
+    const data = rows.filter(r=>keepKeywords.has(r.keyword)).map(r=>{
+      const s=DateTime.fromISO(r.dateFrom,{zone:"utc"});
+      const f=DateTime.fromISO(r.dateTo,{zone:"utc"});
+      const mid=s.isValid&&f.isValid?s.plus({days:Math.max(0,Math.floor(f.diff(s,"days").days)/2)}):s;
+      return {...r, midISO:mid.isValid?mid.toISODate():r.dateFrom, midDT:mid.isValid?mid.toJSDate():new Date(r.dateFrom)};
+    });
 
-  if (meta) {
-    meta.innerHTML = `
-      <span class="pill"><strong>${rows.length}</strong> overlap clusters</span>
-      <span class="pill"><strong>${keywordsWithOverlaps.size}</strong> keywords involved</span>
-      <span class="pill">window: ±${windowDays} days</span>
-    `;
+    const keywords=Array.from(new Set(data.map(d=>d.keyword))).sort((a,b)=>a.localeCompare(b,"en-GB",{numeric:true}));
+    const rowH=18, hWanted=Math.max(220,keywords.length*rowH+70);
+    svgEl.setAttribute("height",String(hWanted));
+
+    const W=Number(svgEl.getAttribute("width")||1400);
+    const H=Number(svgEl.getAttribute("height")||520);
+    const margin={top:28,right:24,bottom:34,left:220};
+    const innerW=W-margin.left-margin.right, innerH=H-margin.top-margin.bottom;
+
+    const svg=d3.select(svgEl);
+    const minDate=d3.min(data,d=>d.midDT), maxDate=d3.max(data,d=>d.midDT);
+    const x=d3.scaleTime().domain([minDate,maxDate]).range([0,innerW]).nice();
+    const y=d3.scaleBand().domain(keywords).range([0,innerH]).paddingInner(0.2);
+    const r=d3.scaleSqrt().domain([2,d3.max(data,d=>d.programmeCount||2)||2]).range([3,12]);
+    const c=d3.scaleSequential().domain([2,d3.max(data,d=>d.programmeCount||2)||2]).interpolator(d3.interpolateTurbo);
+
+    const g=svg.append("g").attr("transform",`translate(${margin.left},${margin.top})`);
+    g.selectAll("line.row").data(keywords).enter().append("line").attr("class","row")
+      .attr("x1",0).attr("x2",innerW)
+      .attr("y1",d=>y(d)+y.bandwidth()/2).attr("y2",d=>y(d)+y.bandwidth()/2)
+      .attr("stroke","#232a36").attr("stroke-width",1);
+
+    const xAxisG=g.append("g").attr("transform",`translate(0,${innerH})`)
+      .call(d3.axisBottom(x).ticks(Math.min(10,Math.max(4,Math.floor(innerW/140)))).tickSizeOuter(0));
+    angleXAxis(xAxisG);
+    xAxisG.selectAll("text").attr("fill","#aeb6c6").attr("font-size",11);
+    xAxisG.selectAll("path,line").attr("stroke","#2b3444");
+
+    g.append("g").call(d3.axisLeft(y).tickSize(0))
+      .selectAll("text").attr("fill","#aeb6c6").attr("font-size",11);
+    g.select(".domain").attr("stroke","none");
+
+    // Tooltip for overlap timeline
+    const existing=$("kwTip");
+    const tip = existing ? d3.select(existing) : d3.select(document.body).append("div")
+      .attr("id","kwTip").attr("class","tooltip")
+      .style("position","fixed").style("max-width","560px").style("pointer-events","none")
+      .style("opacity",0).style("white-space","normal");
+
+    function tipHtml(d) {
+      const progs=(d.programmes||[]).join(", ");
+      const mods=(d.modules||[]).join(", ");
+      const rows=(d.items||[]).map(it=>`<tr>
+        <td style="padding:2px 6px;line-height:1.25;vertical-align:top;white-space:nowrap;">${escapeHtml(it.programme)}</td>
+        <td style="padding:2px 6px;line-height:1.25;vertical-align:top;white-space:nowrap;color:#cbd5e1;">${escapeHtml(it.date)}</td>
+        <td style="padding:2px 6px;line-height:1.25;vertical-align:top;white-space:nowrap;color:#cbd5e1;">${escapeHtml(it.students||"—")}</td>
+        <td style="padding:2px 6px;line-height:1.25;vertical-align:top;color:#cbd5e1;">${escapeHtml(it.task)}</td>
+        <td style="padding:2px 6px;line-height:1.25;vertical-align:top;color:#aeb6c6;">${escapeHtml(it.keyword||d.keyword||"")}</td>
+      </tr>`).join("");
+      const taskTable = rows ? `
+        <div style="margin-top:4px;font-size:12px;line-height:1.25;color:#aeb6c6;">Tasks in this overlap cluster</div>
+        <div style="margin-top:3px;max-height:220px;overflow:auto;border:1px solid rgba(255,255,255,.10);border-radius:10px;">
+          <table style="width:100%;border-collapse:collapse;font-size:12px;">
+            <thead><tr style="position:sticky;top:0;background:rgba(10,11,17,.92);backdrop-filter:blur(6px);">
+              <th style="text-align:left;padding:5px 6px;color:#f2f2f2;font-weight:650;border-bottom:1px solid rgba(255,255,255,.10);">Programme</th>
+              <th style="text-align:left;padding:5px 6px;color:#f2f2f2;font-weight:650;border-bottom:1px solid rgba(255,255,255,.10);">Date</th>
+              <th style="text-align:left;padding:5px 6px;color:#f2f2f2;font-weight:650;border-bottom:1px solid rgba(255,255,255,.10);">Level of B-made input expected</th>
+              <th style="text-align:left;padding:5px 6px;color:#f2f2f2;font-weight:650;border-bottom:1px solid rgba(255,255,255,.10);">Task</th>
+              <th style="text-align:left;padding:5px 6px;color:#f2f2f2;font-weight:650;border-bottom:1px solid rgba(255,255,255,.10);">Keyword</th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>` : "";
+      return `<div style="font-weight:700;margin-bottom:4px;">${escapeHtml(d.keyword)}</div>
+        <div style="color:#cbd5e1;font-size:12px;">${escapeHtml(d.dateFrom)} → ${escapeHtml(d.dateTo)}</div>
+        <div style="margin-top:2px;font-size:12px;line-height:1.25;"><strong>${d.programmeCount}</strong> programmes, <strong>${d.taskCount}</strong> tasks</div>
+        <div style="margin-top:2px;font-size:12px;line-height:1.25;color:#aeb6c6;"><strong>Programmes:</strong> ${escapeHtml(progs)}</div>
+        ${mods?`<div style="margin-top:4px;font-size:12px;color:#aeb6c6;"><strong>Modules:</strong> ${escapeHtml(mods)}</div>`:""}
+        ${taskTable}
+        <div style="margin-top:2px;font-size:12px;line-height:1.25;color:#aeb6c6;">window: ±${windowDays} days</div>`;
+    }
+
+    g.append("g").selectAll("circle.dot").data(data).enter().append("circle")
+      .attr("class","dot")
+      .attr("cx",d=>x(d.midDT)).attr("cy",d=>y(d.keyword)+y.bandwidth()/2)
+      .attr("r",d=>r(d.programmeCount||2)).attr("fill",d=>c(d.programmeCount||2))
+      .attr("opacity",.9).attr("stroke","#0b0f15").attr("stroke-width",1)
+      .on("mousemove",(ev,d)=>{
+        tip.html(tipHtml(d)).style("opacity",1)
+          .style("left",`${Math.min(ev.clientX+14,window.innerWidth-360)}px`)
+          .style("top",`${Math.min(ev.clientY+14,window.innerHeight-220)}px`);
+      }).on("mouseleave",()=>tip.style("opacity",0));
+
+    svg.append("text").attr("x",margin.left).attr("y",18).attr("fill","#aeb6c6").attr("font-size",12)
+      .text("Overlap timeline (top 25 keywords by overlap activity).");
   }
 
-  if (!rows.length) {
-    el.innerHTML = `<div class="note">No cross-programme keyword overlaps found (try widening the window, or check the keyword column).</div>`;
-    drawKeywordOverlapTimeline([], windowDays);
-    return;
-  }
-
-  const top = rows.slice(0, 30);
-
-  el.innerHTML = `
-    <table class="stats-table">
-      <thead>
-        <tr>
-          <th>Keyword</th>
-          <th class="num">Programmes</th>
-          <th class="num">Tasks</th>
-          <th>Date span</th>
-          <th>Programmes involved</th>
-          <th>Example modules</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${top.map(r => `
-          <tr>
-            <td>${escapeHtml(r.keyword)}</td>
-            <td class="num">${r.programmeCount}</td>
-            <td class="num">${r.taskCount}</td>
-            <td style="color:#aeb6c6;">${escapeHtml(r.dateFrom)} → ${escapeHtml(r.dateTo)}</td>
-            <td>${escapeHtml(r.programmes.slice(0, 6).join(", "))}${r.programmes.length > 6 ? "…" : ""}</td>
-            <td style="color:#aeb6c6;">${escapeHtml(r.modules.join(", "))}${r.modules.length >= 10 ? "…" : ""}</td>
-          </tr>
-        `).join("")}
-      </tbody>
-    </table>
-    <div class="note">Showing the top ${top.length} clusters. Increase or decrease the window to change what counts as overlapping.</div>
-  `;
-
-function drawKeywordOverlapTimeline(rows, windowDays) {
-  const svgEl = document.getElementById("keywordOverlapViz");
-  if (!svgEl) return;
-
-  // Clear
-  while (svgEl.firstChild) svgEl.removeChild(svgEl.firstChild);
-
-  if (!rows || !rows.length) {
-    const svg = d3.select(svgEl);
-    svg.append("text")
-      .attr("x", 18)
-      .attr("y", 26)
-      .attr("fill", "#aeb6c6")
-      .attr("font-size", 12)
-      .text("No overlap clusters to plot.");
-    return;
-  }
-
-  // Keep the chart readable: plot up to the busiest 25 keywords (by cluster count, then severity).
-  const byKw = d3.rollups(
-    rows,
-    v => ({
-      n: v.length,
-      severity: d3.sum(v, d => d.severity || 0),
-      programmesMax: d3.max(v, d => d.programmeCount || 0)
-    }),
-    d => d.keyword
-  ).sort((a, b) => (b[1].n - a[1].n) || (b[1].severity - a[1].severity) || String(a[0]).localeCompare(String(b[0]), "en-GB"));
-
-  const keepKeywords = new Set(byKw.slice(0, 25).map(d => d[0]));
-  const data = rows.filter(r => keepKeywords.has(r.keyword)).map(r => {
-    const s = DateTime.fromISO(r.dateFrom, { zone: "utc" });
-    const f = DateTime.fromISO(r.dateTo, { zone: "utc" });
-    const mid = s.isValid && f.isValid ? s.plus({ days: Math.max(0, Math.floor(f.diff(s, "days").days) / 2) }) : s;
-    return { ...r, midISO: mid.isValid ? mid.toISODate() : r.dateFrom, midDT: mid.isValid ? mid.toJSDate() : new Date(r.dateFrom) };
-  });
-
-  const keywords = Array.from(new Set(data.map(d => d.keyword)))
-    .sort((a, b) => a.localeCompare(b, "en-GB", { numeric: true }));
-
-  // Dynamic height (scroll container already exists)
-  const rowH = 18;
-  const hWanted = Math.max(220, (keywords.length * rowH) + 70);
-  svgEl.setAttribute("height", String(hWanted));
-
-  const W = Number(svgEl.getAttribute("width") || 1400);
-  const H = Number(svgEl.getAttribute("height") || 520);
-
-  const margin = { top: 28, right: 24, bottom: 34, left: 220 };
-  const innerW = W - margin.left - margin.right;
-  const innerH = H - margin.top - margin.bottom;
-
-  const svg = d3.select(svgEl);
-
-  const minDate = d3.min(data, d => d.midDT);
-  const maxDate = d3.max(data, d => d.midDT);
-
-  const x = d3.scaleTime()
-    .domain([minDate, maxDate])
-    .range([0, innerW])
-    .nice();
-
-  const y = d3.scaleBand()
-    .domain(keywords)
-    .range([0, innerH])
-    .paddingInner(0.2);
-
-  // Subtle grid lines for y rows
-  const g = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
-
-  g.selectAll("line.row")
-    .data(keywords)
-    .enter()
-    .append("line")
-    .attr("class", "row")
-    .attr("x1", 0)
-    .attr("x2", innerW)
-    .attr("y1", d => y(d) + y.bandwidth() / 2)
-    .attr("y2", d => y(d) + y.bandwidth() / 2)
-    .attr("stroke", "#232a36")
-    .attr("stroke-width", 1);
-
-  const xAxis = d3.axisBottom(x).ticks(Math.min(10, Math.max(4, Math.floor(innerW / 140)))).tickSizeOuter(0);
-  g.append("g")
-    .attr("transform", `translate(0,${innerH})`)
-    .call(xAxis)
-    .call(g => g.selectAll("text").attr("fill", "#aeb6c6").attr("font-size", 11))
-    .call(g => g.selectAll("path,line").attr("stroke", "#2b3444"));
-
-  const yAxis = d3.axisLeft(y).tickSize(0);
-  g.append("g")
-    .call(yAxis)
-    .call(g => g.selectAll("text").attr("fill", "#aeb6c6").attr("font-size", 11))
-    .call(g => g.selectAll("path,line").attr("stroke", "none"));
-
-  // Size scale: programmes involved
-  const r = d3.scaleSqrt()
-    .domain([2, d3.max(data, d => d.programmeCount || 2) || 2])
-    .range([3, 12]);
-
-  // Colour scale: programmeCount (so bigger overlaps pop)
-  const c = d3.scaleSequential()
-    .domain([2, d3.max(data, d => d.programmeCount || 2) || 2])
-    .interpolator(d3.interpolateTurbo);
-
-  // Tooltip
-  const existing = document.getElementById("kwTip");
-  const tip = existing ? d3.select(existing) : d3.select(document.body)
-    .append("div")
-    .attr("id","kwTip")
-    .attr("class", "tooltip")
-    .style("position", "fixed")
-    .style("max-width", "560px")
-    .style("pointer-events", "none")
-    .style("opacity", 0)
-    .style("white-space", "normal")
-    .style("white-space", "normal");
-
-  function tipHtml(d) {
-    const progs = (d.programmes || []).join(", ");
-    const mods = (d.modules || []).join(", ");
-    const items = Array.isArray(d.items) ? d.items : [];
-
-    const rows = items.map(it => {
-      return `
-        <tr>
-          <td style="padding:2px 6px;line-height:1.25;vertical-align:top;white-space:nowrap;">${escapeHtml(it.programme)}</td>
-          <td style="padding:2px 6px;line-height:1.25;vertical-align:top;white-space:nowrap;color:#cbd5e1;">${escapeHtml(it.date)}</td>
-          <td style="padding:2px 6px;line-height:1.25;vertical-align:top;white-space:nowrap;color:#cbd5e1;">${escapeHtml(it.students || "—")}</td>
-          <td style="padding:2px 6px;line-height:1.25;vertical-align:top;color:#cbd5e1;">${escapeHtml(it.task)}</td>
-          <td style="padding:2px 6px;line-height:1.25;vertical-align:top;color:#aeb6c6;">${escapeHtml(it.keyword || d.keyword || "")}</td>
-        </tr>
-      `;
-    }).join("");
-
-    const taskTable = items.length ? `
-      <div style="margin-top:4px;font-size:12px;line-height:1.25;color:#aeb6c6;">Tasks in this overlap cluster</div>
-      <div style="margin-top:3px;max-height:220px;overflow:auto;border:1px solid rgba(255,255,255,0.10);border-radius:10px;">
-        <table style="width:100%;border-collapse:collapse;font-size:12px;">
-          <thead>
-            <tr style="position:sticky;top:0;background:rgba(10,11,17,0.92);backdrop-filter: blur(6px);">
-              <th style="text-align:left;padding:5px 6px;color:#f2f2f2;font-weight:650;border-bottom:1px solid rgba(255,255,255,0.10);">Programme</th>
-              <th style="text-align:left;padding:5px 6px;color:#f2f2f2;font-weight:650;border-bottom:1px solid rgba(255,255,255,0.10);">Date</th>
-              <th style="text-align:left;padding:5px 6px;color:#f2f2f2;font-weight:650;border-bottom:1px solid rgba(255,255,255,0.10);">Level of B-made input expected</th>
-              <th style="text-align:left;padding:5px 6px;color:#f2f2f2;font-weight:650;border-bottom:1px solid rgba(255,255,255,0.10);">Task</th>
-              <th style="text-align:left;padding:5px 6px;color:#f2f2f2;font-weight:650;border-bottom:1px solid rgba(255,255,255,0.10);">Keyword</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rows}
-          </tbody>
-        </table>
-      </div>
-    ` : ``;
-
-    return `
-      <div style="font-weight:700;margin-bottom:4px;">${escapeHtml(d.keyword)}</div>
-      <div style="color:#cbd5e1;font-size:12px;">${escapeHtml(d.dateFrom)} → ${escapeHtml(d.dateTo)}</div>
-      <div style="margin-top:2px;font-size:12px;line-height:1.25;"><strong>${d.programmeCount}</strong> programmes, <strong>${d.taskCount}</strong> tasks</div>
-      <div style="margin-top:2px;font-size:12px;line-height:1.25;color:#aeb6c6;"><strong>Programmes:</strong> ${escapeHtml(progs)}</div>
-      ${mods ? `<div style="margin-top:4px;font-size:12px;color:#aeb6c6;"><strong>Modules:</strong> ${escapeHtml(mods)}</div>` : ``}
-      ${taskTable}
-      <div style="margin-top:2px;font-size:12px;line-height:1.25;color:#aeb6c6;">window: ±${windowDays} days</div>
-    `;
-  }
-
-  const dots = g.append("g").selectAll("circle.dot")
-    .data(data)
-    .enter()
-    .append("circle")
-    .attr("class", "dot")
-    .attr("cx", d => x(d.midDT))
-    .attr("cy", d => y(d.keyword) + y.bandwidth() / 2)
-    .attr("r", d => r(d.programmeCount || 2))
-    .attr("fill", d => c(d.programmeCount || 2))
-    .attr("opacity", 0.9)
-    .attr("stroke", "#0b0f15")
-    .attr("stroke-width", 1);
-
-  dots
-    .on("mousemove", (ev, d) => {
-      tip.html(tipHtml(d))
-        .style("opacity", 1)
-        .style("left", `${Math.min(ev.clientX + 14, window.innerWidth - 360)}px`)
-        .style("top", `${Math.min(ev.clientY + 14, window.innerHeight - 220)}px`);
-    })
-    .on("mouseleave", () => tip.style("opacity", 0));
-
-  // Title
-  svg.append("text")
-    .attr("x", margin.left)
-    .attr("y", 18)
-    .attr("fill", "#aeb6c6")
-    .attr("font-size", 12)
-    .text("Overlap timeline (top 25 keywords by overlap activity).");
-}
-
-
-  drawKeywordOverlapTimeline(rows, windowDays);
-}
-
-
-
-
-
-// --- export helpers (SVG to PNG) ---
+  // ── Export helpers ───────────────────────────────────────────────────────────
   async function exportSvgToPng(svgEl, fileName) {
     const svg = svgEl.cloneNode(true);
-
-    // ensure explicit size
     const w = svgEl.getAttribute("width") || svgEl.clientWidth;
     const h = svgEl.getAttribute("height") || svgEl.clientHeight;
-    svg.setAttribute("width", w);
-    svg.setAttribute("height", h);
-
-    const xml = new XMLSerializer().serializeToString(svg);
-    const svg64 = btoa(unescape(encodeURIComponent(xml)));
-    const image64 = "data:image/svg+xml;base64," + svg64;
-
-    const img = new Image();
-    img.src = image64;
+    svg.setAttribute("width",w); svg.setAttribute("height",h);
+    const xml    = new XMLSerializer().serializeToString(svg);
+    const img    = new Image();
+    img.src      = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(xml)));
     await img.decode();
-
     const canvas = document.createElement("canvas");
-    canvas.width = Number(w);
-    canvas.height = Number(h);
+    canvas.width=Number(w); canvas.height=Number(h);
     const ctx = canvas.getContext("2d");
-
-    // background fill for dark theme
-    ctx.fillStyle = "#0b0c10";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(img, 0, 0);
-
-    const a = document.createElement("a");
-    a.download = fileName;
-    a.href = canvas.toDataURL("image/png");
-    a.click();
+    ctx.fillStyle="#0b0c10"; ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.drawImage(img,0,0);
+    const a=document.createElement("a"); a.download=fileName; a.href=canvas.toDataURL("image/png"); a.click();
   }
 
-  // --- event wiring ---
-elFile.addEventListener("change", async (evt) => {
-  const files = Array.from(evt.target.files || []);
-  if (!files.length) return;
-
-  setEnabled(false);
-  setStatus("Loading…");
-
-  try {
-    allTasks = [];
-    let invalidCount = 0;
-    let sheetCount = 0;
-
-    for (const f of files) {
-      const data = await f.arrayBuffer();
-      const wb = XLSX.read(data, { type: "array", cellDates: true });
-      sheetCount += wb.SheetNames.length;
-
-      const tasks = parseWorkbookToTasks(wb, f.name);
-      invalidCount += tasks.filter(t => !t.valid).length;
-      allTasks.push(...tasks);
+  // ── Event wiring ─────────────────────────────────────────────────────────────
+  elFile.addEventListener("change", async evt => {
+    const files = Array.from(evt.target.files||[]);
+    if (!files.length) return;
+    setEnabled(false); setStatus("Loading…");
+    try {
+      allTasks = [];
+      let invalidCount=0, sheetCount=0;
+      for (const f of files) {
+        const wb = XLSX.read(await f.arrayBuffer(), {type:"array", cellDates:true});
+        sheetCount += wb.SheetNames.length;
+        const tasks = parseWorkbookToTasks(wb, f.name);
+        invalidCount += tasks.filter(t=>!t.valid).length;
+        allTasks.push(...tasks);
+      }
+      const validCount = allTasks.filter(t=>t.valid).length;
+      const courses    = uniqueSorted(allTasks.filter(t=>t.valid).map(t=>t.course));
+      refreshFilterOptions();
+      setEnabled(true);
+      setStatus(`Loaded files: ${files.length}\nSheets scanned: ${sheetCount}\nCourses detected (by sheet name): ${courses.length}\nValid tasks: ${validCount}\nRows needing attention (missing required cells): ${invalidCount}`);
+      applyFilters();
+    } catch(err) {
+      console.error(err);
+      setStatus(`Error while loading:\n${err&&err.message?err.message:String(err)}`);
+      setEnabled(false);
     }
-
-    const validCount = allTasks.filter(t => t.valid).length;
-    const courses = uniqueSorted(allTasks.filter(t => t.valid).map(t => t.course));
-
-    refreshFilterOptions();
-    setEnabled(true);
-
-    setStatus(
-      `Loaded files: ${files.length}
-Sheets scanned: ${sheetCount}
-Courses detected (by sheet name): ${courses.length}
-Valid tasks: ${validCount}
-Rows needing attention (missing required cells): ${invalidCount}`
-    );
-
-    applyFilters();
-  } catch (err) {
-    console.error(err);
-    setStatus(`Error while loading:\n${err && err.message ? err.message : String(err)}`);
-    setEnabled(false);
-  }
-});
-
-
-  elApply.addEventListener("click", () => applyFilters());
-  elReset.addEventListener("click", () => resetFilters());
-  if (elSearchBox) elSearchBox.addEventListener("input", () => applyFilters());
-  if (elSeverityMode) elSeverityMode.addEventListener("change", () => applyFilters());
-
-  elLikemin.addEventListener("change", () => {
-    const a = Number(elLikemin.value);
-    const b = Number(elLikemax.value);
-    if (a > b) elLikemax.value = String(a);
   });
 
-  elLikemax.addEventListener("change", () => {
-    const a = Number(elLikemin.value);
-    const b = Number(elLikemax.value);
-    if (b < a) elLikemin.value = String(b);
-  });
+  elApply.addEventListener("click", ()=>applyFilters());
+  elReset.addEventListener("click", ()=>resetFilters());
+  elSearchBox.addEventListener("input", ()=>applyFilters());
+  elSeverityMode.addEventListener("change", ()=>applyFilters());
 
-  elExportGantt.addEventListener("click", async () => {
-    await exportSvgToPng(document.getElementById("gantt"), "gantt.png");
-  });
+  elLikemin.addEventListener("change", ()=>{ if (Number(elLikemin.value)>Number(elLikemax.value)) elLikemax.value=elLikemin.value; });
+  elLikemax.addEventListener("change", ()=>{ if (Number(elLikemax.value)<Number(elLikemin.value)) elLikemin.value=elLikemax.value; });
 
-  elExportHeat.addEventListener("click", async () => {
-    await exportSvgToPng(document.getElementById("heat"), "severity.png");
-  });
+  elExportGantt.addEventListener("click", ()=>exportSvgToPng($("gantt"),"gantt.png"));
+  elExportHeat.addEventListener("click",  ()=>exportSvgToPng($("heat"),"severity.png"));
 
 })();
 </script>
