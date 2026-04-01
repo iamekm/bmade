@@ -105,6 +105,12 @@
 
   .task { stroke:rgba(0,0,0,.35); stroke-width:1; rx:5; ry:5; }
   .task:hover { stroke:rgba(255,255,255,.65); stroke-width:1.2; }
+  .moduleDurationBand { fill:rgba(122,162,255,.12); stroke:rgba(122,162,255,.35); stroke-width:1; stroke-dasharray:4 3; rx:6; ry:6; }
+  .moduleDurationBandLabel { fill:#c7d6ff; font-size:10px; }
+  .closureBand { fill:rgba(255,107,107,.10); stroke:rgba(255,107,107,.45); stroke-width:1; stroke-dasharray:3 3; }
+  .closureBandKnown { fill:rgba(255,107,107,.10); stroke:rgba(255,107,107,.50); }
+  .closureBandTentative { fill:rgba(255,184,107,.10); stroke:rgba(255,184,107,.55); }
+  .closureBandLabel { fill:#ffd0d0; font-size:10px; }
 
   .tooltip {
     position:fixed; pointer-events:none; z-index:9999;
@@ -156,6 +162,10 @@
     </div>
 
     <div class="status" id="status">No file loaded.</div>
+
+    <label style="margin-top:12px;">Closure dates overlay (optional)</label>
+    <input id="closureFile" type="file" accept=".xlsx,.xls" />
+    <div class="status" id="closureStatus">No closure file loaded.</div>
 
     <h2 style="margin-top:14px;">2) Filters</h2>
 
@@ -213,6 +223,80 @@
       <div><label>Date from</label><input id="filterFrom" type="date" /></div>
       <div><label>Date to</label><input id="filterTo" type="date" /></div>
     </div>
+
+    <label style="margin-top:12px;">Display options</label>
+    <div class="row">
+      <div>
+        <label style="display:flex;align-items:center;gap:8px;margin:0;color:var(--text);">
+          <input id="showModuleDuration" type="checkbox" checked style="width:auto;accent-color:#7aa2ff;" />
+          <span>Show Module Duration overlay</span>
+        </label>
+      </div>
+      <div>
+        <label style="display:flex;align-items:center;gap:8px;margin:0;color:var(--text);">
+          <input id="useEcAsEnd" type="checkbox" style="width:auto;accent-color:#7aa2ff;" />
+          <span>Use EC? as Activity End where present</span>
+        </label>
+      </div>
+    </div>
+    <div class="row" style="margin-top:10px;">
+      <div>
+        <label style="display:flex;align-items:center;gap:8px;margin:0;color:var(--text);">
+          <input id="showClosures" type="checkbox" checked style="width:auto;accent-color:#7aa2ff;" />
+          <span>Show closure date overlay</span>
+        </label>
+      </div>
+      <div></div>
+    </div>
+    <div class="note">Upload a separate closure-date workbook above. All Sites is applied to Gordon Street, Here East, Wicklow Street, and Marshgate.</div>
+
+    <label style="margin-top:12px;">Deadline and crit window</label>
+    <div class="row">
+      <div>
+        <label style="display:flex;align-items:center;gap:8px;margin:0;color:var(--text);">
+          <input id="useTaskWindow" type="checkbox" style="width:auto;accent-color:#7aa2ff;" />
+          <span>Add window to deadline and crit tasks</span>
+        </label>
+      </div>
+      <div></div>
+    </div>
+    <div class="row" style="margin-top:10px;align-items:end;">
+      <div>
+        <label style="display:flex;align-items:center;gap:8px;margin:0;color:var(--text);">
+          <input id="windowBeforeDeadline" type="checkbox" style="width:auto;accent-color:#7aa2ff;" checked />
+          <span>Before deadlines</span>
+        </label>
+        <label>Days before deadlines</label>
+        <input id="windowBeforeDeadlineDays" type="number" min="0" step="1" value="14" />
+      </div>
+      <div>
+        <label style="display:flex;align-items:center;gap:8px;margin:0;color:var(--text);">
+          <input id="windowAfterDeadline" type="checkbox" style="width:auto;accent-color:#7aa2ff;" />
+          <span>After deadlines</span>
+        </label>
+        <label>Days after deadlines</label>
+        <input id="windowAfterDeadlineDays" type="number" min="0" step="1" value="14" />
+      </div>
+    </div>
+    <div class="row" style="margin-top:10px;align-items:end;">
+      <div>
+        <label style="display:flex;align-items:center;gap:8px;margin:0;color:var(--text);">
+          <input id="windowBeforeCrit" type="checkbox" style="width:auto;accent-color:#7aa2ff;" />
+          <span>Before crits</span>
+        </label>
+        <label>Days before crits</label>
+        <input id="windowBeforeCritDays" type="number" min="0" step="1" value="14" />
+      </div>
+      <div>
+        <label style="display:flex;align-items:center;gap:8px;margin:0;color:var(--text);">
+          <input id="windowAfterCrit" type="checkbox" style="width:auto;accent-color:#7aa2ff;" checked />
+          <span>After crits</span>
+        </label>
+        <label>Days after crits</label>
+        <input id="windowAfterCritDays" type="number" min="0" step="1" value="14" />
+      </div>
+    </div>
+    <div class="note">When enabled, you can independently switch on and set the number of days for before deadlines, after deadlines, before crits, and after crits.</div>
 
     <label>Keyword overlap window (days)</label>
     <input id="overlapWindow" type="number" min="0" step="1" value="14" />
@@ -296,11 +380,26 @@
 
 <script>
 (() => {
-  const DateTime = luxon.DateTime;
+  const { DateTime } = luxon;
 
-  // ── Column-name normalisation ───────────────────────────────────────────────
-  const normKey = s => String(s||"").trim().toLowerCase().replace(/\s+/g," ").replace(/[\u2013\u2014]/g,"-");
+  // ── HTML / string utilities ──────────────────────────────────────────────────
 
+  /** Safely escape a value for insertion into innerHTML. */
+  const escapeHtml = str => String(str)
+    .replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;").replaceAll("'","&#039;");
+
+  /** Truncate a string to `max` characters, appending an ellipsis if needed. */
+  const shortLabel = (s, max = 26) => {
+    const t = String(s || "").trim();
+    return t.length <= max ? t : t.slice(0, max - 1) + "…";
+  };
+
+  // ── Column-name normalisation ────────────────────────────────────────────────
+
+  const normKey = s => String(s || "").trim().toLowerCase().replace(/\s+/g, " ").replace(/[\u2013\u2014]/g, "-");
+
+  /** Canonical aliases for every logical column we care about. */
   const COLMAP = {
     module:          ["module","module name","module title","modulename"],
     year:            ["year","year group","yeargroup"],
@@ -312,12 +411,17 @@
     students:        ["level of b-made input expected","a measure of number of students (1-10, 10-20, 21-30, 31+)","number of students","students","student bucket"],
     start:           ["activity start","date of activity start","activity start date","start date","date start"],
     finish:          ["activity end","date of activity finish","activity end date","finish date","end date","date finish"],
+    ec:              ["ec?","ec","extended end","extended completion","extension date"],
     status:          ["tentative or known?","known or tentative","status"],
     location:        ["location","site","room","space","campus"],
     themes:          ["themes","keywords","key themes","academic themes","theme","tags"],
     keyword:         ["keyword","keywords","key word","tags","tag"]
   };
 
+  /**
+   * Find the column index that best matches any of the `wantList` aliases.
+   * First tries exact match, then substring containment.
+   */
   function findCol(headers, wantList) {
     for (const want of wantList) {
       const idx = headers.findIndex(h => normKey(h) === normKey(want));
@@ -333,11 +437,13 @@
     return -1;
   }
 
-  // ── Date helpers ────────────────────────────────────────────────────────────
+  // ── Date helpers ─────────────────────────────────────────────────────────────
+
+  /** Convert an Excel cell value (number, Date, or string) to an ISO date string, or null. */
   function excelDateToISO(v) {
     if (v == null || v === "") return null;
     if (v instanceof Date) {
-      const dt = DateTime.fromJSDate(v, {zone:"utc"});
+      const dt = DateTime.fromJSDate(v, { zone: "utc" });
       return dt.isValid ? dt.toISODate() : null;
     }
     if (typeof v === "number") {
@@ -347,37 +453,58 @@
       return dt.isValid ? dt.toISODate() : null;
     }
     const s = String(v).trim();
-    let dt = DateTime.fromISO(s, {zone:"utc"});
+    let dt = DateTime.fromISO(s, { zone: "utc" });
     if (dt.isValid) return dt.toISODate();
     for (const f of ["d/M/yyyy","dd/MM/yyyy","d/M/yy","dd/MM/yy","d-M-yyyy","dd-MM-yyyy"]) {
-      dt = DateTime.fromFormat(s, f, {zone:"utc"});
+      dt = DateTime.fromFormat(s, f, { zone: "utc" });
       if (dt.isValid) return dt.toISODate();
     }
     return null;
   }
 
-  function isoToJSDate(iso) { return DateTime.fromISO(iso, {zone:"utc"}).toJSDate(); }
+  const isoToJSDate = iso => DateTime.fromISO(iso, { zone: "utc" }).toJSDate();
 
-  function startOfISOWeek(dt) {
-    return dt.minus({days: dt.weekday - 1}).startOf("day");
+  /** Add `days` days to an ISO date string, clamped to the start of the resulting day. */
+  function addDaysISO(iso, days) {
+    if (!iso || !Number.isFinite(Number(days))) return iso;
+    const dt = DateTime.fromISO(iso, { zone: "utc" }).plus({ days: Number(days) }).startOf("day");
+    return dt.isValid ? dt.toISODate() : iso;
   }
 
+  /** Normalise a task-type string for comparison (collapses whitespace around slashes). */
+  const canonicalTaskType = v => String(v || "").trim().toLowerCase().replace(/\s*\/\s*/g, " /");
+
+  /** Return the ISO date of the Monday on or before `dt`. */
+  const startOfISOWeek = dt => dt.minus({ days: dt.weekday - 1 }).startOf("day");
+
+  /**
+   * Build an array of ISO week-start dates covering [minISO, maxISO].
+   * @returns {string[]}
+   */
   function buildWeeks(minISO, maxISO) {
     const weeks = [];
-    for (let d = startOfISOWeek(DateTime.fromISO(minISO,{zone:"utc"}));
-         d <= startOfISOWeek(DateTime.fromISO(maxISO,{zone:"utc"}));
-         d = d.plus({weeks:1})) {
+    for (
+      let d = startOfISOWeek(DateTime.fromISO(minISO, { zone: "utc" }));
+      d <= startOfISOWeek(DateTime.fromISO(maxISO, { zone: "utc" }));
+      d = d.plus({ weeks: 1 })
+    ) {
       weeks.push(d.toISODate());
     }
     return weeks;
   }
 
-  // ── Student sizing helpers ──────────────────────────────────────────────────
+  // ── Student sizing helpers ───────────────────────────────────────────────────
+
+  /** Clamp `x` to [lo, hi] after rounding; returns null if not a finite number. */
   const clampInt = (x, lo, hi) => {
     const n = Number(x);
     return Number.isFinite(n) ? Math.max(lo, Math.min(hi, Math.round(n))) : null;
   };
 
+  /**
+   * Parse a student count from a raw cell value.
+   * Accepts numbers, bucket strings ("1-10", "31+"), or anything with a leading digit.
+   */
   function parseStudentCount(v) {
     if (v == null || v === "") return null;
     if (typeof v === "number" && Number.isFinite(v)) return Math.max(0, Math.round(v));
@@ -393,6 +520,7 @@
     return Number.isFinite(n) ? Math.max(0, Math.round(n)) : null;
   }
 
+  /** Convert a numeric count to its bucket string label. */
   function bucketFromCount(n) {
     const x = Number(n);
     if (!Number.isFinite(x)) return "";
@@ -402,9 +530,10 @@
     return "31+";
   }
 
+  /** Return the severity weight (1–4) for a bucket string or numeric count. */
   function studentWeight(v) {
     if (typeof v === "number" && Number.isFinite(v)) return studentWeight(bucketFromCount(v));
-    const b = String(v||"").trim();
+    const b = String(v || "").trim();
     if (b === "1-10")  return 1;
     if (b === "11-20") return 2;
     if (b === "21-30") return 3;
@@ -412,19 +541,28 @@
     return 1;
   }
 
-  function computeModeFields(task, mode) {
-    const m = mode || "expected";
-    const count = m === "cohort"
+  /**
+   * Populate the mode-specific fields on a task object in-place.
+   * `mode` is either "expected" (default) or "cohort".
+   */
+  function computeModeFields(task, mode = "expected") {
+    const count = mode === "cohort"
       ? (task.cohortSize ?? task.studentsCount)
       : (task.expectedStudents ?? task.studentsCount);
-    task.modeStudentsCount = (count != null && Number.isFinite(Number(count))) ? Number(count) : null;
-    task.modeStudentsBucket = task.modeStudentsCount != null ? bucketFromCount(task.modeStudentsCount) : (task.studentsBucket || "");
+    task.modeStudentsCount  = (count != null && Number.isFinite(Number(count))) ? Number(count) : null;
+    task.modeStudentsBucket = task.modeStudentsCount != null
+      ? bucketFromCount(task.modeStudentsCount)
+      : (task.studentsBucket || "");
     task.severityPerDay = (task.likelihood || 0) * studentWeight(task.modeStudentsCount ?? task.modeStudentsBucket);
-    task.mode = m;
+    task.mode = mode;
   }
 
+  /**
+   * Parse a delimited theme/keyword cell into a de-duplicated array of strings.
+   * Accepts newlines, commas, semicolons, or pipes as separators.
+   */
   function parseThemes(v) {
-    const raw = String(v||"").trim();
+    const raw = String(v || "").trim();
     if (!raw) return [];
     const seen = new Set();
     return raw.split(/[\n\r,;|]+/g).map(s => s.trim()).filter(s => {
@@ -439,96 +577,145 @@
     lik === 2 ? "rgba(255,184,107,.70)" :
                 "rgba(255,107,107,.72)";
 
-  // ── Shared: aggregate severity by (key + week) ──────────────────────────────
-  // Returns a Map: `${key}||${weekISO}` -> totalSeverity
+  // ── Shared: aggregate severity by (key + week) ───────────────────────────────
+
+  /**
+   * Walk every task and accumulate severity per day into weekly buckets.
+   * @param {object[]} tasks
+   * @param {function} keyFn - returns a string key for each task
+   * @returns {Map<string, number>} key is `"${keyFn(task)}||${weekISO}"`
+   */
   function aggregateWeekly(tasks, keyFn) {
     const totals = new Map();
     for (const t of tasks) {
-      const s = DateTime.fromISO(t.startISO, {zone:"utc"}).startOf("day");
-      const f = DateTime.fromISO(t.finishISO, {zone:"utc"}).startOf("day");
+      const s = DateTime.fromISO(t.startISO, { zone: "utc" }).startOf("day");
+      const f = DateTime.fromISO(t.finishISO, { zone: "utc" }).startOf("day");
       if (!s.isValid || !f.isValid) continue;
-      for (let d = s; d <= f; d = d.plus({days:1})) {
+      for (let d = s; d <= f; d = d.plus({ days: 1 })) {
         const k = `${keyFn(t)}||${startOfISOWeek(d).toISODate()}`;
-        totals.set(k, (totals.get(k)||0) + (t.severityPerDay||0));
+        totals.set(k, (totals.get(k) || 0) + (t.severityPerDay || 0));
       }
     }
     return totals;
   }
 
-  // ── Shared chart scaffolding helpers ───────────────────────────────────────
+  // ── Shared chart scaffolding helpers ─────────────────────────────────────────
+
+  /** Add background grid lines plus bottom and left axes to a chart group. */
   function addGridAndAxes(g, x, y, innerW, innerH, xTicks, yTicks, xFmt) {
     g.append("g").attr("class","grid")
-      .call(d3.axisLeft(y).ticks(yTicks).tickSize(-innerW).tickFormat(()=>""));
+      .call(d3.axisLeft(y).ticks(yTicks).tickSize(-innerW).tickFormat(() => ""));
     const xAxisG = g.append("g").attr("class","axis")
-      .attr("transform",`translate(0,${innerH})`)
+      .attr("transform", `translate(0,${innerH})`)
       .call(d3.axisBottom(x).ticks(xTicks).tickFormat(xFmt || d3.timeFormat("%d %b")));
     angleXAxis(xAxisG);
     g.append("g").attr("class","axis").call(d3.axisLeft(y).ticks(yTicks));
     return xAxisG;
   }
 
-  // Shared right-side legend (rect + text items)
+  /** Append a right-side legend (coloured rect + label per item) to an SVG. */
   function addRightLegend(svg, title, items, colourFn, margin, innerW) {
-    const leg = svg.append("g").attr("transform",`translate(${margin.left+innerW+14},${margin.top})`);
+    const leg = svg.append("g").attr("transform", `translate(${margin.left + innerW + 14},${margin.top})`);
     leg.append("text").attr("x",0).attr("y",0).attr("fill","#aeb6c6").attr("font-size",12).text(title);
     const g = leg.selectAll("g.item").data(items).enter().append("g")
-      .attr("class","item").attr("transform",(d,i)=>`translate(0,${16+i*16})`);
+      .attr("class","item").attr("transform", (d,i) => `translate(0,${16 + i * 16})`);
     g.append("rect").attr("x",0).attr("y",-10).attr("width",10).attr("height",10)
-      .attr("rx",3).attr("ry",3).attr("fill",colourFn);
-    g.append("text").attr("x",16).attr("y",-2).attr("fill","#aeb6c6").attr("font-size",11).text(d=>d);
+      .attr("rx",3).attr("ry",3).attr("fill", colourFn);
+    g.append("text").attr("x",16).attr("y",-2).attr("fill","#aeb6c6").attr("font-size",11).text(d => d);
   }
 
-  // Shared: draw lines + hover dots
+  /**
+   * Draw lines and interactive hover-dots for a set of named series.
+   * @param {string} valKey - the property on each datum to use as the y value
+   */
   function addLinesAndDots(g, x, y, series, valKey, colourFn, onHover) {
-    const line = d3.line().x(d=>x(d.date)).y(d=>y(d[valKey]||d.value||0)).curve(d3.curveMonotoneX);
+    const line = d3.line()
+      .x(d => x(d.date))
+      .y(d => y(d[valKey] ?? 0))
+      .curve(d3.curveMonotoneX);
+
     const linesG = g.append("g");
+
     linesG.selectAll("path").data(series).enter().append("path")
-      .attr("fill","none").attr("stroke-width",2).attr("stroke",colourFn)
+      .attr("fill","none").attr("stroke-width",2).attr("stroke", colourFn)
       .attr("d", s => line(s.values));
+
     linesG.selectAll("g.points").data(series).enter().append("g").attr("class","points")
-      .selectAll("circle").data(s => s.values.map(v=>({...v, _key: s._key||s.course||s.loc||s.theme})))
+      .selectAll("circle")
+      .data(s => s.values.map(v => ({ ...v, _key: s._key || s.course || s.loc || s.theme })))
       .enter().append("circle")
-      .attr("cx",d=>x(d.date)).attr("cy",d=>y(d[valKey]||d.value||0)).attr("r",3)
-      .attr("fill",d=>colourFn(d))
-      .on("mousemove", onHover).on("mouseleave", hideTooltip);
+      .attr("cx", d => x(d.date))
+      .attr("cy", d => y(d[valKey] ?? 0))
+      .attr("r", 3)
+      .attr("fill", d => colourFn(d))
+      .on("mousemove", onHover)
+      .on("mouseleave", hideTooltip);
   }
 
-  // ── State & DOM ─────────────────────────────────────────────────────────────
-  let allTasks = [], filteredTasks = [];
+  // ── State & DOM ──────────────────────────────────────────────────────────────
 
-  const $ = id => document.getElementById(id);
-  const elFile       = $("file");
-  const elStatus     = $("status");
-  const elApply      = $("apply");
-  const elReset      = $("reset");
-  const elCourse     = $("filterCourse");
-  const elType       = $("filterType");
-  const elLocation   = $("filterLocation");
-  const elSearchBox  = $("searchBox");
-  const elSeverityMode = $("severityMode");
-  const elYear       = $("filterYear");
-  const elStudents   = $("filterStudents");
-  const elLikemin    = $("filterLikemin");
-  const elLikemax    = $("filterLikemax");
-  const elFrom       = $("filterFrom");
-  const elTo         = $("filterTo");
-  const elOverlapWindow = $("overlapWindow");
-  const kpiTasks     = $("kpiTasks");
-  const kpiCourses   = $("kpiCourses");
-  const ganttMeta    = $("ganttMeta");
-  const heatMeta     = $("heatMeta");
-  const statsMeta    = $("statsMeta");
-  const elExportGantt = $("exportGantt");
-  const elExportHeat  = $("exportHeat");
-  const tooltip       = $("tooltip");
-  const svgG = d3.select("#gantt");
-  const svgH = d3.select("#heat");
+  let allTasks = [], filteredTasks = [], closureEntries = [];
+
+  /**
+   * Retrieve a DOM element by id, throwing a clear error if not found.
+   * @param {string} id
+   * @returns {HTMLElement}
+   */
+  function $(id) {
+    const el = document.getElementById(id);
+    if (!el) throw new Error(`Element #${id} not found in DOM`);
+    return el;
+  }
+
+  const elFile                    = $("file");
+  const elClosureFile             = $("closureFile");
+  const elStatus                  = $("status");
+  const elClosureStatus           = $("closureStatus");
+  const elApply                   = $("apply");
+  const elReset                   = $("reset");
+  const elCourse                  = $("filterCourse");
+  const elType                    = $("filterType");
+  const elLocation                = $("filterLocation");
+  const elSearchBox               = $("searchBox");
+  const elSeverityMode            = $("severityMode");
+  const elYear                    = $("filterYear");
+  const elStudents                = $("filterStudents");
+  const elLikemin                 = $("filterLikemin");
+  const elLikemax                 = $("filterLikemax");
+  const elFrom                    = $("filterFrom");
+  const elTo                      = $("filterTo");
+  const elShowModuleDuration      = $("showModuleDuration");
+  const elShowClosures            = $("showClosures");
+  const elUseEcAsEnd              = $("useEcAsEnd");
+  const elUseTaskWindow           = $("useTaskWindow");
+  const elWindowBeforeDeadlineDays = $("windowBeforeDeadlineDays");
+  const elWindowAfterDeadlineDays  = $("windowAfterDeadlineDays");
+  const elWindowBeforeCritDays    = $("windowBeforeCritDays");
+  const elWindowAfterCritDays     = $("windowAfterCritDays");
+  const elWindowBeforeDeadline    = $("windowBeforeDeadline");
+  const elWindowAfterDeadline     = $("windowAfterDeadline");
+  const elWindowBeforeCrit        = $("windowBeforeCrit");
+  const elWindowAfterCrit         = $("windowAfterCrit");
+  const elOverlapWindow           = $("overlapWindow");
+  const kpiTasks                  = $("kpiTasks");
+  const kpiCourses                = $("kpiCourses");
+  const ganttMeta                 = $("ganttMeta");
+  const heatMeta                  = $("heatMeta");
+  const statsMeta                 = $("statsMeta");
+  const elExportGantt             = $("exportGantt");
+  const elExportHeat              = $("exportHeat");
+  const tooltip                   = $("tooltip");
+  const svgG                      = d3.select("#gantt");
+  const svgH                      = d3.select("#heat");
 
   const setStatus  = msg => { elStatus.textContent = msg; };
   const setEnabled = yes => {
     [elApply, elReset, elExportGantt, elExportHeat].forEach(el => el.disabled = !yes);
   };
 
+  // ── Filter UI helpers ────────────────────────────────────────────────────────
+
+  /** Populate a <select multiple> with `values`, selecting all options. */
   function fillSelectMultiple(select, values) {
     select.innerHTML = "";
     for (const v of values) {
@@ -539,191 +726,431 @@
     }
   }
 
-  const selectedValues = select => Array.from(select.options).filter(o=>o.selected).map(o=>o.value);
+  const selectedValues = select =>
+    Array.from(select.options).filter(o => o.selected).map(o => o.value);
 
+  /** Return unique non-empty string values, sorted with locale-aware numeric collation. */
   function uniqueSorted(arr) {
     return Array.from(new Set(arr.filter(v => v != null && String(v).trim() !== "")))
-      .map(v => String(v)).sort((a,b) => a.localeCompare(b,"en-GB",{numeric:true}));
+      .map(v => String(v))
+      .sort((a, b) => a.localeCompare(b, "en-GB", { numeric: true }));
   }
 
-  // ── Sheet parsing ───────────────────────────────────────────────────────────
-  function getEffectiveSheetRange(sheet, maxScanCells=200000) {
-    const keys = Object.keys(sheet||{});
-    let seen=0, minR=Infinity, minC=Infinity, maxR=-1, maxC=-1;
-    for (const k of keys) {
-      if (k[0]==="!" || !/^[A-Z]+\d+$/.test(k)) continue;
+  // ── Window / filter state helpers ────────────────────────────────────────────
+
+  /**
+   * Read the current window-days values from the UI into a plain object.
+   * @returns {{ beforeDeadline, afterDeadline, beforeCrit, afterCrit }}
+   */
+  function readWindowDays() {
+    return {
+      beforeDeadline: Math.max(0, Number(elWindowBeforeDeadlineDays.value) || 0),
+      afterDeadline:  Math.max(0, Number(elWindowAfterDeadlineDays.value)  || 0),
+      beforeCrit:     Math.max(0, Number(elWindowBeforeCritDays.value)     || 0),
+      afterCrit:      Math.max(0, Number(elWindowAfterCritDays.value)      || 0),
+    };
+  }
+
+  /**
+   * Read the window-rule checkbox states from the UI into a plain object.
+   * @returns {{ beforeDeadline, afterDeadline, beforeCrit, afterCrit }}
+   */
+  function readWindowRules() {
+    return {
+      beforeDeadline: elWindowBeforeDeadline.checked,
+      afterDeadline:  elWindowAfterDeadline.checked,
+      beforeCrit:     elWindowBeforeCrit.checked,
+      afterCrit:      elWindowAfterCrit.checked,
+    };
+  }
+
+  // ── Sheet parsing ────────────────────────────────────────────────────────────
+
+  /**
+   * Determine the actual data range of a sheet by scanning non-empty cells,
+   * avoiding reliance on the `!ref` property (which can be wrong for many exporters).
+   */
+  function getEffectiveSheetRange(sheet, maxScanCells = 200_000) {
+    let seen = 0, minR = Infinity, minC = Infinity, maxR = -1, maxC = -1;
+    for (const k of Object.keys(sheet || {})) {
+      if (k[0] === "!" || !/^[A-Z]+\d+$/.test(k)) continue;
       const cell = sheet[k];
-      if (!cell || cell.v==null || String(cell.v).trim()==="") continue;
-      const rc = XLSX.utils.decode_cell(k);
-      if (rc.r < minR) minR = rc.r; if (rc.r > maxR) maxR = rc.r;
-      if (rc.c < minC) minC = rc.c; if (rc.c > maxC) maxC = rc.c;
+      if (!cell || cell.v == null || String(cell.v).trim() === "") continue;
+      const { r, c } = XLSX.utils.decode_cell(k);
+      if (r < minR) minR = r; if (r > maxR) maxR = r;
+      if (c < minC) minC = c; if (c > maxC) maxC = c;
       if (++seen >= maxScanCells) break;
     }
     if (maxR < 0) return null;
-    return { s:{r:Math.min(minR,0), c:Math.min(minC,0)}, e:{r:maxR, c:maxC} };
+    return { s: { r: Math.min(minR, 0), c: Math.min(minC, 0) }, e: { r: maxR, c: maxC } };
   }
 
+  /**
+   * Parse every sheet in `workbook` into an array of task objects.
+   * Sheets that lack the required columns are silently skipped.
+   */
   function parseWorkbookToTasks(workbook, fileName) {
     const tasks = [];
+
     for (const sheetName of workbook.SheetNames) {
       const sheet = workbook.Sheets[sheetName];
       if (!sheet) continue;
+
       const rows = XLSX.utils.sheet_to_json(sheet, {
-        header:1, raw:true, blankrows:false, range: getEffectiveSheetRange(sheet)||undefined
+        header: 1, raw: true, blankrows: false,
+        range: getEffectiveSheetRange(sheet) || undefined
       });
       if (!rows || rows.length < 2) continue;
 
-      const headersRaw = rows[0].map(h=>String(h||"").trim());
-      let lastH = headersRaw.length-1;
-      while (lastH >= 0 && (!headersRaw[lastH]||headersRaw[lastH].trim()==="")) lastH--;
-      const headers = headersRaw.slice(0, lastH+1);
+      // Trim trailing empty header cells
+      const headersRaw = rows[0].map(h => String(h || "").trim());
+      let lastH = headersRaw.length - 1;
+      while (lastH >= 0 && (!headersRaw[lastH] || headersRaw[lastH].trim() === "")) lastH--;
+      const headers = headersRaw.slice(0, lastH + 1);
 
-      const idx = {};
-      for (const [k,v] of Object.entries(COLMAP)) idx[k] = findCol(headers, v);
+      // Map logical column names to indices
+      const idx = Object.fromEntries(
+        Object.entries(COLMAP).map(([k, v]) => [k, findCol(headers, v)])
+      );
 
-      const hasSizing = idx.cohort>=0 || idx.students>=0 || idx.expectedStudents>=0 || idx.expectedPercent>=0;
-      if ([idx.module,idx.year,idx.type,idx.likelihood,idx.start,idx.finish].some(i=>i<0) || !hasSizing) continue;
+      const hasSizing = idx.cohort >= 0 || idx.students >= 0
+        || idx.expectedStudents >= 0 || idx.expectedPercent >= 0;
 
-      for (let r=1; r<rows.length; r++) {
+      // Skip sheets that are missing any required column
+      if ([idx.module, idx.year, idx.type, idx.likelihood, idx.start, idx.finish].some(i => i < 0)
+          || !hasSizing) continue;
+
+      for (let r = 1; r < rows.length; r++) {
         const row = rows[r];
-        if (!row || row.length===0) continue;
+        if (!row || row.length === 0) continue;
 
-        const moduleName  = String(row[idx.module]||"").trim();
-        const yearGroup   = clampInt(row[idx.year], 1, 9);
-        const type        = String(row[idx.type]||"").trim();
+        const moduleName  = String(row[idx.module]  || "").trim();
+        const yearGroup   = clampInt(row[idx.year],  1, 9);
+        const type        = String(row[idx.type]     || "").trim();
         const likelihood  = clampInt(row[idx.likelihood], 0, 3);
 
-        let cohortSize = parseStudentCount(idx.cohort>=0 ? row[idx.cohort] : null);
-        let expectedStudents = parseStudentCount(idx.expectedStudents>=0 ? row[idx.expectedStudents] : null);
+        let cohortSize       = parseStudentCount(idx.cohort >= 0   ? row[idx.cohort]   : null);
+        let expectedStudents = parseStudentCount(idx.expectedStudents >= 0 ? row[idx.expectedStudents] : null);
 
+        // Parse expectedPercent: accept decimals (0–1) or percentages (1–100)
         let expectedPercent = null;
         if (idx.expectedPercent >= 0) {
           const v = row[idx.expectedPercent];
-          if (typeof v==="number" && Number.isFinite(v)) {
+          if (typeof v === "number" && Number.isFinite(v)) {
             expectedPercent = v;
           } else {
-            const m = String(v||"").trim().match(/[-+]?\d*\.?\d+/);
+            const m = String(v || "").trim().match(/[-+]?\d*\.?\d+/);
             if (m) expectedPercent = Number(m[0]);
           }
         }
 
-        const legacyCount = parseStudentCount(idx.students>=0 ? row[idx.students] : null);
-        if (cohortSize==null && legacyCount!=null) cohortSize = legacyCount;
-        if (expectedStudents==null && cohortSize!=null && expectedPercent!=null && Number.isFinite(expectedPercent)) {
-          const p = expectedPercent > 1 ? expectedPercent/100 : expectedPercent;
+        // Fall back: use legacy "students" column as cohort if cohort is absent
+        const legacyCount = parseStudentCount(idx.students >= 0 ? row[idx.students] : null);
+        if (cohortSize == null && legacyCount != null) cohortSize = legacyCount;
+
+        // Derive expectedStudents from cohort × percent if not directly provided
+        if (expectedStudents == null && cohortSize != null && expectedPercent != null
+            && Number.isFinite(expectedPercent)) {
+          const p = expectedPercent > 1 ? expectedPercent / 100 : expectedPercent;
           expectedStudents = Math.max(0, Math.round(cohortSize * p));
         }
 
         const studentsCount  = cohortSize ?? legacyCount;
-        const studentsBucket = studentsCount!=null ? bucketFromCount(studentsCount) : String(row[idx.students>=0?idx.students:idx.cohort]||"").trim();
+        const studentsBucket = studentsCount != null
+          ? bucketFromCount(studentsCount)
+          : String(row[idx.students >= 0 ? idx.students : idx.cohort] || "").trim();
 
-        const statusRaw = idx.status>=0 ? String(row[idx.status]||"").trim() : "";
-        const s = statusRaw.toLowerCase();
-        const status = s.includes("tent") ? "Tentative" : s.includes("know") ? "Known" : "—";
+        // Normalise status to "Tentative" | "Known" | "—"
+        const statusRaw = idx.status >= 0 ? String(row[idx.status] || "").trim() : "";
+        const sl = statusRaw.toLowerCase();
+        const status = sl.includes("tent") ? "Tentative" : sl.includes("know") ? "Known" : "—";
 
-        const location = idx.location>=0 ? String(row[idx.location]||"").trim() : "";
-        const themes   = idx.themes>=0   ? parseThemes(row[idx.themes]) : [];
-        const keywords = idx.keyword>=0  ? parseThemes(row[idx.keyword]) : themes;
-        const startISO = excelDateToISO(row[idx.start]);
-        const finishISO= excelDateToISO(row[idx.finish]);
+        const location = idx.location >= 0 ? String(row[idx.location] || "").trim() : "";
+        const themes   = idx.themes   >= 0 ? parseThemes(row[idx.themes])   : [];
+        const keywords = idx.keyword  >= 0 ? parseThemes(row[idx.keyword])  : themes;
 
-        if (!moduleName && !type && !startISO && !finishISO) continue;
+        const rawStartISO  = excelDateToISO(row[idx.start]);
+        const rawFinishISO = excelDateToISO(row[idx.finish]);
+        const ecISO        = idx.ec >= 0   ? excelDateToISO(row[idx.ec]) : null;
 
-        const base = { file:fileName, course:sheetName, moduleName, yearGroup, type, likelihood,
-                        studentsBucket, studentsCount, cohortSize, expectedStudents, expectedPercent,
-                        status, location, themes, keywords, startISO, finishISO };
+        // Skip entirely blank rows
+        if (!moduleName && !type && !rawStartISO && !rawFinishISO && !ecISO) continue;
 
-        if (!moduleName || !type || !startISO || !finishISO || likelihood==null) {
-          tasks.push({ ...base, valid:false, course:`${fileName} · ${sheetName}` });
+        const base = {
+          file: fileName, course: sheetName,
+          moduleName, yearGroup, type, likelihood,
+          studentsBucket, studentsCount, cohortSize, expectedStudents, expectedPercent,
+          status, location, themes, keywords,
+          rawStartISO, rawFinishISO, ecISO,
+          startISO: rawStartISO, finishISO: rawFinishISO,
+          effectiveFinishSource: "Activity End",
+          hasEcEnd: !!ecISO
+        };
+
+        // Mark invalid if any required field is missing
+        if (!moduleName || !type || !rawStartISO || !rawFinishISO || likelihood == null) {
+          tasks.push({ ...base, valid: false, course: `${fileName} · ${sheetName}` });
           continue;
         }
 
-        const dtS = DateTime.fromISO(startISO, {zone:"utc"});
-        const dtF = DateTime.fromISO(finishISO, {zone:"utc"});
+        const dtS = DateTime.fromISO(rawStartISO,  { zone: "utc" });
+        const dtF = DateTime.fromISO(rawFinishISO, { zone: "utc" });
         if (!dtS.isValid || !dtF.isValid) {
-          tasks.push({ ...base, valid:false });
+          tasks.push({ ...base, valid: false });
           continue;
         }
 
         const start  = dtS.startOf("day");
-        const finish = (dtF.startOf("day") < start ? start : dtF.startOf("day"));
-        const sw = studentWeight((cohortSize ?? studentsCount) ?? studentsBucket);
+        const finish = dtF.startOf("day") < start ? start : dtF.startOf("day");
+        const sw     = studentWeight((cohortSize ?? studentsCount) ?? studentsBucket);
+
         tasks.push({
           ...base,
           valid: true,
-          startISO: start.toISODate(),
-          finishISO: finish.toISODate(),
-          severityPerDay: (likelihood||0) * sw,
-          modeStudentsCount: null, modeStudentsBucket: "", mode:"expected"
+          rawStartISO:  start.toISODate(),
+          rawFinishISO: finish.toISODate(),
+          startISO:     start.toISODate(),
+          finishISO:    finish.toISODate(),
+          severityPerDay: (likelihood || 0) * sw,
+          modeStudentsCount: null, modeStudentsBucket: "", mode: "expected"
         });
       }
     }
+
     return tasks;
   }
 
-  // ── Filter helpers ──────────────────────────────────────────────────────────
-  function refreshFilterOptions() {
-    const valid = allTasks.filter(t=>t.valid);
-    fillSelectMultiple(elCourse, uniqueSorted(valid.map(t=>t.course)));
-    fillSelectMultiple(elType, uniqueSorted(valid.map(t=>t.type)));
-    fillSelectMultiple(elLocation, uniqueSorted(valid.map(t=>(t.location&&String(t.location).trim())?String(t.location).trim():"—")));
-    const years = uniqueSorted(valid.map(t=>t.yearGroup).filter(v=>v!=null));
-    elYear.innerHTML = `<option value="">All</option>` + years.map(y=>`<option value="${y}">${y}</option>`).join("");
-    const starts = valid.map(t=>t.startISO).filter(Boolean).sort();
-    const ends   = valid.map(t=>t.finishISO).filter(Boolean).sort();
-    if (starts.length) elFrom.value = starts[0];
-    if (ends.length)   elTo.value   = ends[ends.length-1];
-    kpiTasks.textContent   = String(valid.length);
-    kpiCourses.textContent = String(uniqueSorted(valid.map(t=>t.course)).length);
+  /**
+   * Parse a separately uploaded closures workbook into overlay records.
+   * Expected columns include Closure Type, Activity Start, Activity End,
+   * Tentative or Known?, Location, Keywords, and KEY.
+   */
+  function parseClosureWorkbook(workbook, fileName) {
+    const closures = [];
+    const LOCATION_EXPANSIONS = {
+      "all sites": ["Gordon Street", "Here East", "Wicklow Street", "Marshgate"]
+    };
+
+    const closureColMap = {
+      closureType: ["closure type","type","closure"],
+      start: ["activity start","start date","activity start date","date start"],
+      finish: ["activity end","end date","activity end date","finish date","date finish"],
+      status: ["tentative or known?","known or tentative","status"],
+      location: ["location","site","campus","space"],
+      keywords: ["keywords","keyword","themes","tags"],
+      key: ["key","name","label","title"]
+    };
+
+    for (const sheetName of workbook.SheetNames) {
+      const sheet = workbook.Sheets[sheetName];
+      if (!sheet) continue;
+
+      const rows = XLSX.utils.sheet_to_json(sheet, {
+        header: 1, raw: true, blankrows: false,
+        range: getEffectiveSheetRange(sheet) || undefined
+      });
+      if (!rows || rows.length < 2) continue;
+
+      const headersRaw = rows[0].map(h => String(h || "").trim());
+      let lastH = headersRaw.length - 1;
+      while (lastH >= 0 && (!headersRaw[lastH] || headersRaw[lastH].trim() === "")) lastH--;
+      const headers = headersRaw.slice(0, lastH + 1);
+
+      const idx = Object.fromEntries(
+        Object.entries(closureColMap).map(([k, v]) => [k, findCol(headers, v)])
+      );
+
+      if ([idx.start, idx.finish, idx.location].some(i => i < 0)) continue;
+
+      for (let r = 1; r < rows.length; r++) {
+        const row = rows[r];
+        if (!row || row.length === 0) continue;
+
+        const closureType = idx.closureType >= 0 ? String(row[idx.closureType] || "").trim() : "Closure";
+        const startISO = excelDateToISO(row[idx.start]);
+        const finishISO = excelDateToISO(row[idx.finish]);
+        const locationRaw = idx.location >= 0 ? String(row[idx.location] || "").trim() : "";
+        const statusRaw = idx.status >= 0 ? String(row[idx.status] || "").trim() : "";
+        const keywords = idx.keywords >= 0 ? parseThemes(row[idx.keywords]) : [];
+        const key = idx.key >= 0 ? String(row[idx.key] || "").trim() : "";
+
+        if (!startISO || !finishISO || !locationRaw) continue;
+        const dtS = DateTime.fromISO(startISO, { zone: "utc" }).startOf("day");
+        const dtF0 = DateTime.fromISO(finishISO, { zone: "utc" }).startOf("day");
+        if (!dtS.isValid || !dtF0.isValid) continue;
+        const dtF = dtF0 < dtS ? dtS : dtF0;
+
+        const statusLc = statusRaw.toLowerCase();
+        const status = statusLc.includes("tent") ? "Tentative" : statusLc.includes("know") ? "Known" : "—";
+        const expandedLocations = LOCATION_EXPANSIONS[locationRaw.trim().toLowerCase()]
+          ? [...LOCATION_EXPANSIONS[locationRaw.trim().toLowerCase()]]
+          : [locationRaw];
+
+        closures.push({
+          file: fileName,
+          sheet: sheetName,
+          closureType,
+          label: key || closureType || "Closure",
+          startISO: dtS.toISODate(),
+          finishISO: dtF.toISODate(),
+          status,
+          location: locationRaw,
+          locations: expandedLocations,
+          keywords
+        });
+      }
+    }
+
+    return closures;
   }
 
+  // ── Filter helpers ───────────────────────────────────────────────────────────
+
+  /**
+   * Recalculate `startISO` and `finishISO` for a valid task based on the
+   * current UI settings (EC? toggle, deadline/crit window).
+   * Mutates the task object in-place.
+   */
+  function recomputeTaskDates(task, opts = {}) {
+    if (!task || !task.valid) return;
+
+    const { useEcAsEnd = false, useTaskWindow = false } = opts;
+    const windowDays  = opts.windowDays  || {};
+    const windowRules = opts.windowRules || {};
+
+    const beforeDeadlineDays = Math.max(0, Number(windowDays.beforeDeadline) || 0);
+    const afterDeadlineDays  = Math.max(0, Number(windowDays.afterDeadline)  || 0);
+    const beforeCritDays     = Math.max(0, Number(windowDays.beforeCrit)     || 0);
+    const afterCritDays      = Math.max(0, Number(windowDays.afterCrit)      || 0);
+
+    let startISO  = task.rawStartISO;
+    let finishISO = (useEcAsEnd && task.ecISO) ? task.ecISO : task.rawFinishISO;
+    const finishSource = (useEcAsEnd && task.ecISO) ? "EC?" : "Activity End";
+
+    const kind = canonicalTaskType(task.type);
+    const isDeadline = kind === "deadline";
+    const isCrit     = kind === "crit";
+    const hasAnyWindow =
+      (windowRules.beforeDeadline && beforeDeadlineDays > 0) ||
+      (windowRules.afterDeadline  && afterDeadlineDays  > 0) ||
+      (windowRules.beforeCrit     && beforeCritDays     > 0) ||
+      (windowRules.afterCrit      && afterCritDays      > 0);
+
+    if (useTaskWindow && hasAnyWindow && (isDeadline || isCrit)) {
+      if (isDeadline) {
+        if (windowRules.beforeDeadline && beforeDeadlineDays > 0) startISO  = addDaysISO(startISO,  -beforeDeadlineDays);
+        if (windowRules.afterDeadline  && afterDeadlineDays  > 0) finishISO = addDaysISO(finishISO,  afterDeadlineDays);
+      }
+      if (isCrit) {
+        if (windowRules.beforeCrit && beforeCritDays > 0) startISO  = addDaysISO(startISO,  -beforeCritDays);
+        if (windowRules.afterCrit  && afterCritDays  > 0) finishISO = addDaysISO(finishISO,  afterCritDays);
+      }
+    }
+
+    const dtS  = DateTime.fromISO(startISO,  { zone: "utc" }).startOf("day");
+    const dtF0 = DateTime.fromISO(finishISO, { zone: "utc" }).startOf("day");
+    if (!dtS.isValid || !dtF0.isValid) return;
+    const dtF = dtF0 < dtS ? dtS : dtF0;
+
+    const windowApplied = useTaskWindow && hasAnyWindow && (isDeadline || isCrit);
+    task.startISO                = dtS.toISODate();
+    task.finishISO               = dtF.toISODate();
+    task.effectiveFinishSource   = finishSource;
+    task.windowApplied           = windowApplied;
+    task.windowDaysApplied       = windowApplied
+      ? { beforeDeadline: beforeDeadlineDays, afterDeadline: afterDeadlineDays, beforeCrit: beforeCritDays, afterCrit: afterCritDays }
+      : { beforeDeadline: 0, afterDeadline: 0, beforeCrit: 0, afterCrit: 0 };
+    task.windowPlacementApplied  = windowApplied ? JSON.stringify(windowRules) : "none";
+  }
+
+  /** Refresh the course / type / location / year / date filter controls from `allTasks`. */
+  function refreshFilterOptions() {
+    const valid = allTasks.filter(t => t.valid);
+    fillSelectMultiple(elCourse,   uniqueSorted(valid.map(t => t.course)));
+    fillSelectMultiple(elType,     uniqueSorted(valid.map(t => t.type)));
+    fillSelectMultiple(elLocation, uniqueSorted(valid.map(t => (t.location && String(t.location).trim()) ? String(t.location).trim() : "—")));
+
+    const years = uniqueSorted(valid.map(t => t.yearGroup).filter(v => v != null));
+    elYear.innerHTML = `<option value="">All</option>` + years.map(y => `<option value="${y}">${y}</option>`).join("");
+
+    const starts = valid.map(t => t.startISO).filter(Boolean).sort();
+    const ends   = valid.map(t => t.finishISO).filter(Boolean).sort();
+    if (starts.length) elFrom.value = starts[0];
+    if (ends.length)   elTo.value   = ends[ends.length - 1];
+
+    kpiTasks.textContent   = String(valid.length);
+    kpiCourses.textContent = String(uniqueSorted(valid.map(t => t.course)).length);
+  }
+
+  /** Apply all filters to `allTasks`, populate `filteredTasks`, and redraw all charts. */
   function applyFilters() {
     const courses   = new Set(selectedValues(elCourse));
     const types     = new Set(selectedValues(elType));
     const locations = new Set(selectedValues(elLocation));
-    const year      = elYear.value ? Number(elYear.value) : null;
+    const year      = elYear.value     ? Number(elYear.value) : null;
     const students  = elStudents.value || null;
     const q         = elSearchBox.value.trim().toLowerCase();
-    const likeMin   = Number(elLikemin.value||1);
-    const likeMax   = Number(elLikemax.value||3);
+    const likeMin   = Number(elLikemin.value || 1);
+    const likeMax   = Number(elLikemax.value || 3);
     const from      = elFrom.value || null;
     const to        = elTo.value   || null;
     const mode      = elSeverityMode.value || "expected";
+    const useEcAsEnd    = elUseEcAsEnd.checked;
+    const useTaskWindow = elUseTaskWindow.checked;
+    const windowDays    = readWindowDays();
+    const windowRules   = readWindowRules();
 
-    const valid = allTasks.filter(t=>t.valid);
-    for (const t of valid) computeModeFields(t, mode);
+    const valid = allTasks.filter(t => t.valid);
+    for (const t of valid) {
+      recomputeTaskDates(t, { useEcAsEnd, useTaskWindow, windowDays, windowRules });
+      computeModeFields(t, mode);
+    }
 
     filteredTasks = valid.filter(t => {
-      if (courses.size && !courses.has(t.course)) return false;
-      if (types.size && !types.has(t.type)) return false;
-      const loc = (t.location&&String(t.location).trim()) ? String(t.location).trim() : "—";
-      if (locations.size && !locations.has(loc)) return false;
+      if (courses.size   && !courses.has(t.course))   return false;
+      if (types.size     && !types.has(t.type))       return false;
+      const loc = (t.location && String(t.location).trim()) ? String(t.location).trim() : "—";
+      if (locations.size && !locations.has(loc))      return false;
       if (q) {
-        const hay = [t.moduleName, t.course, t.location, t.type, ...(t.keywords||[]), ...(t.themes||[])].join(" ").toLowerCase();
+        const hay = [t.moduleName, t.course, t.location, t.type, ...(t.keywords || []), ...(t.themes || [])].join(" ").toLowerCase();
         if (!hay.includes(q)) return false;
       }
-      if (year!=null && t.yearGroup!==year) return false;
-      if (students && String(t.modeStudentsBucket||t.studentsBucket).trim()!==students) return false;
-      if (t.likelihood<likeMin || t.likelihood>likeMax) return false;
-      if (from && t.finishISO<from) return false;
-      if (to   && t.startISO>to)   return false;
+      if (year != null   && t.yearGroup !== year)                                           return false;
+      if (students       && String(t.modeStudentsBucket || t.studentsBucket).trim() !== students) return false;
+      if (t.likelihood < likeMin || t.likelihood > likeMax)                                return false;
+      if (from && t.finishISO < from) return false;
+      if (to   && t.startISO  > to)   return false;
       return true;
     });
 
     drawAll();
   }
 
+  /** Reset all filters to defaults and redraw. */
   function resetFilters() {
     refreshFilterOptions();
-    elStudents.value = "";
-    elLikemin.value  = "1";
-    elLikemax.value  = "3";
-    elSearchBox.value = "";
-    elSeverityMode.value = "expected";
+    elStudents.value         = "";
+    elLikemin.value          = "1";
+    elLikemax.value          = "3";
+    elSearchBox.value        = "";
+    elSeverityMode.value     = "expected";
+    elShowModuleDuration.checked         = true;
+    elUseEcAsEnd.checked                 = false;
+    elShowClosures.checked                = true;
+    elUseTaskWindow.checked              = false;
+    elWindowBeforeDeadlineDays.value     = "14";
+    elWindowAfterDeadlineDays.value      = "14";
+    elWindowBeforeCritDays.value         = "14";
+    elWindowAfterCritDays.value          = "14";
+    elWindowBeforeDeadline.checked       = true;
+    elWindowAfterDeadline.checked        = false;
+    elWindowBeforeCrit.checked           = false;
+    elWindowAfterCrit.checked            = true;
     applyFilters();
   }
 
-  // ── drawAll ─────────────────────────────────────────────────────────────────
+  // ── drawAll ──────────────────────────────────────────────────────────────────
+
   function drawAll() {
     drawGantt(filteredTasks);
     drawSeverityLines(filteredTasks);
@@ -736,670 +1163,884 @@
     drawKeywordOverlaps(filteredTasks);
     renderCourseStats(filteredTasks);
 
-    const startMin = d3.min(filteredTasks, d=>d.startISO);
-    const endMax   = d3.max(filteredTasks, d=>d.finishISO);
-    ganttMeta.innerHTML = `<span class="pill"><strong>${filteredTasks.length}</strong> tasks shown</span><span class="pill">${startMin||"—"} → ${endMax||"—"}</span>`;
-    heatMeta.innerHTML  = `<span class="pill"><strong>${filteredTasks.length}</strong> tasks used</span><span class="pill">weekly aggregation</span>`;
+    // Update metadata pills
+    const startMin          = d3.min(filteredTasks, d => d.startISO);
+    const endMax            = d3.max(filteredTasks, d => d.finishISO);
+    const showModDur        = elShowModuleDuration.checked;
+    const useTaskWindow     = elUseTaskWindow.checked;
+    const windowDays        = readWindowDays();
+    const windowRules       = readWindowRules();
+
+    const visibleMainCount = showModDur
+      ? filteredTasks.filter(t => canonicalTaskType(t.type) !== "module duration").length
+      : filteredTasks.length;
+    const durationCount = filteredTasks.filter(t => canonicalTaskType(t.type) === "module duration").length;
+    const closureOverlayCount = elShowClosures.checked ? closureEntries.length : 0;
+
+    ganttMeta.innerHTML =
+      `<span class="pill"><strong>${visibleMainCount}</strong> bars shown</span>` +
+      `<span class="pill">${startMin || "—"} → ${endMax || "—"}</span>` +
+      (showModDur ? `<span class="pill">${durationCount} Module Duration overlays</span>` : "") +
+      (elShowClosures.checked && closureEntries.length ? `<span class="pill">${closureOverlayCount} closure overlays loaded</span>` : "");
+
+    const windowSummaryBits = [];
+    if (windowRules.beforeDeadline && windowDays.beforeDeadline > 0) windowSummaryBits.push(`before deadlines ${windowDays.beforeDeadline}d`);
+    if (windowRules.afterDeadline  && windowDays.afterDeadline  > 0) windowSummaryBits.push(`after deadlines ${windowDays.afterDeadline}d`);
+    if (windowRules.beforeCrit     && windowDays.beforeCrit     > 0) windowSummaryBits.push(`before crits ${windowDays.beforeCrit}d`);
+    if (windowRules.afterCrit      && windowDays.afterCrit      > 0) windowSummaryBits.push(`after crits ${windowDays.afterCrit}d`);
+
+    const useEcAsEnd = elUseEcAsEnd.checked;
+    heatMeta.innerHTML =
+      `<span class="pill"><strong>${filteredTasks.length}</strong> tasks used</span>` +
+      `<span class="pill">weekly aggregation</span>` +
+      `<span class="pill">End date: ${useEcAsEnd ? "EC? where present" : "Activity End"}</span>` +
+      (useTaskWindow && windowSummaryBits.length ? `<span class="pill">Deadline/Crit window: ${windowSummaryBits.join(", ")}</span>` : "");
   }
 
   // ── Tooltip helpers ──────────────────────────────────────────────────────────
-  function placeTooltip(evt, maxW=340, maxH=220) {
-    const pad=14;
-    tooltip.style.left = `${Math.min(evt.clientX+pad, window.innerWidth-maxW)}px`;
-    tooltip.style.top  = `${Math.min(evt.clientY+pad, window.innerHeight-maxH)}px`;
+
+  /** Position the shared tooltip near the cursor, keeping it within the viewport. */
+  function placeTooltip(evt, maxW = 340, maxH = 220) {
+    const pad = 14;
+    tooltip.style.left = `${Math.min(evt.clientX + pad, window.innerWidth  - maxW)}px`;
+    tooltip.style.top  = `${Math.min(evt.clientY + pad, window.innerHeight - maxH)}px`;
   }
 
+  /** Show the tooltip with content and position it near `evt`. */
+  function showTooltipRaw(evt, html, maxW, maxH) {
+    tooltip.innerHTML           = html;
+    tooltip.style.opacity       = "1";
+    tooltip.style.transform     = "translateY(0px)";
+    placeTooltip(evt, maxW, maxH);
+  }
+
+  /** Show the detailed task tooltip. */
   function showTooltip(evt, task) {
-    const pct = task.expectedPercent!=null && task.cohortSize!=null
-      ? ` (${(task.expectedPercent>1?task.expectedPercent:task.expectedPercent*100).toFixed(0)}% of ${task.cohortSize})`
+    const pct = task.expectedPercent != null && task.cohortSize != null
+      ? ` (${(task.expectedPercent > 1 ? task.expectedPercent : task.expectedPercent * 100).toFixed(0)}% of ${task.cohortSize})`
       : "";
-    tooltip.innerHTML =
-      `<strong>${task.moduleName}</strong>\n` +
-      `Course: ${task.course}\n` +
-      `Location: ${task.location||"—"}\n` +
-      `Keywords: ${(task.keywords&&task.keywords.length)?task.keywords.join(", "):"—"}\n` +
-      `Year: ${task.yearGroup!=null?task.yearGroup:"—"}\n` +
-      `Task type: ${task.type}\n` +
-      `Dates: ${task.startISO} → ${task.finishISO}\n` +
-      `Likelihood: ${task.likelihood}\n` +
-      `Students (${task.mode==="cohort"?"cohort":"expected"}): ${task.modeStudentsCount!=null?task.modeStudentsCount+" ("+task.modeStudentsBucket+")":task.modeStudentsBucket||"—"}\n` +
-      `Expected students: ${task.expectedStudents!=null?task.expectedStudents:"—"}${pct}\n` +
-      `Cohort size: ${task.cohortSize!=null?task.cohortSize:"—"}\n` +
-      `Status: ${task.status||"—"}\n` +
-      `Severity per day: ${task.severityPerDay}`;
-    tooltip.style.opacity = "1";
-    tooltip.style.transform = "translateY(0px)";
-    placeTooltip(evt);
+    showTooltipRaw(evt, [
+      `<strong>${task.moduleName}</strong>`,
+      `Course: ${task.course}`,
+      `Location: ${task.location || "—"}`,
+      `Keywords: ${task.keywords?.length ? task.keywords.join(", ") : "—"}`,
+      `Year: ${task.yearGroup != null ? task.yearGroup : "—"}`,
+      `Task type: ${task.type}`,
+      `Dates: ${task.startISO} → ${task.finishISO}`,
+      `Likelihood: ${task.likelihood}`,
+      `Students (${task.mode === "cohort" ? "cohort" : "expected"}): ${task.modeStudentsCount != null ? `${task.modeStudentsCount} (${task.modeStudentsBucket})` : task.modeStudentsBucket || "—"}`,
+      `Expected students: ${task.expectedStudents != null ? task.expectedStudents : "—"}${pct}`,
+      `Cohort size: ${task.cohortSize != null ? task.cohortSize : "—"}`,
+      `Status: ${task.status || "—"}`,
+      `Severity per day: ${task.severityPerDay}`,
+    ].join("\n"));
+  }
+
+  /** Show a simple week-severity tooltip for chart dots/cells. */
+  function showWeekTooltip(evt, label, weekISO, value, extras = "") {
+    const dt = DateTime.fromISO(weekISO, { zone: "utc" });
+    showTooltipRaw(evt,
+      `<strong>${escapeHtml(label)}</strong>\nWeek commencing: ${dt.toFormat("dd LLL yyyy")}\nWeekly severity: ${value.toFixed(0)}${extras}`
+    );
   }
 
   const hideTooltip = () => {
-    tooltip.style.opacity = "0";
+    tooltip.style.opacity   = "0";
     tooltip.style.transform = "translateY(6px)";
   };
 
-  // Rotate x-axis tick labels
-  function angleXAxis(axisG, angle=-30) {
+  /** Rotate x-axis tick labels for readability on dense charts. */
+  function angleXAxis(axisG, angle = -30) {
     if (!axisG) return;
     axisG.selectAll("text")
-      .attr("transform",`rotate(${angle})`).style("text-anchor","end")
+      .attr("transform", `rotate(${angle})`).style("text-anchor","end")
       .attr("dx","-0.6em").attr("dy","0.25em");
   }
 
   // ── Gantt ────────────────────────────────────────────────────────────────────
+
   function drawGantt(tasks) {
     svgG.selectAll("*").remove();
     const width = 1400;
-    if (!tasks.length) { svgG.attr("width",width).attr("height",620); return; }
+    if (!tasks.length) { svgG.attr("width", width).attr("height", 620); return; }
 
-    const shortLabel = (s, max=26) => { const t=String(s||"").trim(); return t.length<=max?t:t.slice(0,max-1)+"…"; };
-    const splitLane  = lane => { const p=String(lane||"").split(" · "); return {course:p[0]||lane, module:p.slice(1).join(" · ")||""}; };
-    const laneKey    = d => `${d.course} · ${d.moduleName}`;
-    const lanes      = uniqueSorted(tasks.map(laneKey));
-    const height     = Math.max(620, 120 + lanes.length * 18);
+    const showModuleDuration = elShowModuleDuration.checked;
+    const splitLane = lane => { const p = String(lane || "").split(" · "); return { course: p[0] || lane, module: p.slice(1).join(" · ") || "" }; };
+    const laneKey   = d => `${d.course} · ${d.moduleName}`;
+    const lanes     = uniqueSorted(tasks.map(laneKey));
+    const height    = Math.max(620, 120 + lanes.length * 18);
 
-    svgG.attr("width",width).attr("height",height);
+    svgG.attr("width", width).attr("height", height);
 
-    const minDate = isoToJSDate(d3.min(tasks,d=>d.startISO));
-    const maxDate = DateTime.fromISO(d3.max(tasks,d=>d.finishISO),{zone:"utc"}).plus({days:1}).toJSDate();
+    const showClosures = elShowClosures.checked;
+    const allClosureDates = showClosures ? closureEntries.flatMap(c => [c.startISO, c.finishISO]).filter(Boolean) : [];
+    const minTaskISO = d3.min(tasks, d => d.startISO);
+    const maxTaskISO = d3.max(tasks, d => d.finishISO);
+    const minDate = isoToJSDate(d3.min([minTaskISO, ...allClosureDates].filter(Boolean)));
+    const maxDate = DateTime.fromISO(d3.max([maxTaskISO, ...allClosureDates].filter(Boolean)), { zone: "utc" }).plus({ days: 1 }).toJSDate();
 
-    const margin = {top:28, right:16, bottom:30, left:360};
-    const innerW = width-margin.left-margin.right;
-    const innerH = height-margin.top-margin.bottom;
+    const margin = { top: 28, right: 16, bottom: 30, left: 360 };
+    const innerW = width  - margin.left - margin.right;
+    const innerH = height - margin.top  - margin.bottom;
 
-    const x = d3.scaleTime().domain([minDate,maxDate]).range([0,innerW]);
-    const y = d3.scaleBand().domain(lanes).range([0,innerH]).paddingInner(0.16);
+    const x = d3.scaleTime().domain([minDate, maxDate]).range([0, innerW]);
+    const y = d3.scaleBand().domain(lanes).range([0, innerH]).paddingInner(0.16);
 
-    const g = svgG.append("g").attr("transform",`translate(${margin.left},${margin.top})`);
+    const g = svgG.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
 
-    g.append("g").attr("class","grid").attr("transform",`translate(0,${innerH})`)
-      .call(d3.axisBottom(x).ticks(d3.timeWeek.every(1)).tickSize(-innerH).tickFormat(()=>""));
+    g.append("g").attr("class","grid").attr("transform", `translate(0,${innerH})`)
+      .call(d3.axisBottom(x).ticks(d3.timeWeek.every(1)).tickSize(-innerH).tickFormat(() => ""));
 
-    const xAxisG = g.append("g").attr("class","axis").attr("transform",`translate(0,${innerH})`)
+    const xAxisG = g.append("g").attr("class","axis").attr("transform", `translate(0,${innerH})`)
       .call(d3.axisBottom(x).ticks(d3.timeWeek.every(1)).tickFormat(d3.timeFormat("%d %b")));
     angleXAxis(xAxisG);
 
-    g.append("g").attr("class","axis").call(d3.axisLeft(y).tickSize(0).tickFormat(d=>{
-      const {module} = splitLane(d); return shortLabel(module||d,24);
+    g.append("g").attr("class","axis").call(d3.axisLeft(y).tickSize(0).tickFormat(d => {
+      const { module } = splitLane(d);
+      return shortLabel(module || d, 24);
     })).selectAll("text").attr("fill","#aeb6c6").attr("font-size",11);
 
-    // Course header labels
-    const laneMeta = lanes.map(l=>({lane:l,...splitLane(l)}));
-    Array.from(d3.group(laneMeta,d=>d.course), ([course,items])=>{
-      const topLane = items.map(i=>i.lane).sort((a,b)=>(y(a)??0)-(y(b)??0))[0];
-      return {course, lane:topLane};
-    }).sort((a,b)=>(y(a.lane)??0)-(y(b.lane)??0))
-      .forEach(({course,lane}) => {
-        g.append("text").attr("class","courseHeader").attr("x",-350)
-          .attr("y",(y(lane)??0)+3).attr("fill","#f1f1f1").attr("font-size",12)
-          .attr("font-weight",700).text(shortLabel(course,30));
+    // Course-level headers in the left margin
+    const laneMeta = lanes.map(l => ({ lane: l, ...splitLane(l) }));
+    Array.from(d3.group(laneMeta, d => d.course), ([course, items]) => {
+      const topLane = items.map(i => i.lane).sort((a,b) => (y(a) ?? 0) - (y(b) ?? 0))[0];
+      return { course, lane: topLane };
+    }).sort((a,b) => (y(a.lane) ?? 0) - (y(b.lane) ?? 0))
+      .forEach(({ course, lane }) => {
+        g.append("text").attr("class","courseHeader")
+          .attr("x",-350).attr("y",(y(lane) ?? 0) + 3)
+          .attr("fill","#f1f1f1").attr("font-size",12).attr("font-weight",700)
+          .text(shortLabel(course, 30));
       });
 
-    // Task bars
-    g.append("g").selectAll("rect").data(tasks).enter().append("rect")
-      .attr("class","task")
-      .attr("x", d=>x(isoToJSDate(d.startISO)))
-      .attr("y", d=>(y(laneKey(d))??0)+1)
-      .attr("width", d=>{
-        const a=x(isoToJSDate(d.startISO));
-        const b=x(DateTime.fromISO(d.finishISO,{zone:"utc"}).plus({days:1}).toJSDate());
-        return Math.max(2,b-a);
-      })
-      .attr("height", Math.max(10,y.bandwidth()-2))
-      .attr("fill", d=>likelihoodColour(d.likelihood))
-      .on("mousemove",(evt,d)=>showTooltip(evt,d)).on("mouseleave",hideTooltip);
+    const durationTasks = tasks.filter(t => canonicalTaskType(t.type) === "module duration");
+    const mainTasks     = tasks.filter(t => canonicalTaskType(t.type) !== "module duration");
 
-    // Lane separators
+    const laneLocations = new Map();
+    for (const t of tasks) {
+      const lane = laneKey(t);
+      const loc = String(t.location || "").trim();
+      if (!laneLocations.has(lane)) laneLocations.set(lane, new Set());
+      if (loc) laneLocations.get(lane).add(loc);
+    }
+
+    const closureBands = [];
+    if (showClosures && closureEntries.length) {
+      for (const lane of lanes) {
+        const locs = laneLocations.get(lane) || new Set();
+        for (const closure of closureEntries) {
+          const matches = Array.from(locs).some(loc => closure.locations.some(cLoc => normKey(cLoc) === normKey(loc)));
+          if (matches) closureBands.push({ lane, closure });
+        }
+      }
+    }
+
+    // Compute pixel width of a task bar
+    const barWidth = d => {
+      const a = x(isoToJSDate(d.startISO));
+      const b = x(DateTime.fromISO(d.finishISO, { zone: "utc" }).plus({ days: 1 }).toJSDate());
+      return Math.max(2, b - a);
+    };
+
+    if (closureBands.length) {
+      const closureG = g.append("g");
+      closureG.selectAll("rect").data(closureBands).enter().append("rect")
+        .attr("class", d => `closureBand ${d.closure.status === "Tentative" ? "closureBandTentative" : "closureBandKnown"}`)
+        .attr("x", d => x(isoToJSDate(d.closure.startISO)))
+        .attr("y", d => (y(d.lane) ?? 0) + Math.max(0, y.bandwidth() * 0.04))
+        .attr("width", d => {
+          const a = x(isoToJSDate(d.closure.startISO));
+          const b = x(DateTime.fromISO(d.closure.finishISO, { zone: "utc" }).plus({ days: 1 }).toJSDate());
+          return Math.max(2, b - a);
+        })
+        .attr("height", d => Math.max(6, y.bandwidth() * 0.92))
+        .on("mousemove", (evt, d) => {
+          const laneInfo = splitLane(d.lane);
+          showTooltipRaw(evt, [
+            `<strong>${escapeHtml(d.closure.label || "Closure")}</strong>`,
+            `Course: ${escapeHtml(laneInfo.course || "—")}`,
+            `Module: ${escapeHtml(laneInfo.module || "—")}`,
+            `Closure type: ${escapeHtml(d.closure.closureType || "Closure")}`,
+            `Location: ${escapeHtml(d.closure.location || "—")}`,
+            `Dates: ${escapeHtml(d.closure.startISO)} → ${escapeHtml(d.closure.finishISO)}`,
+            `Status: ${escapeHtml(d.closure.status || "—")}`,
+            d.closure.keywords && d.closure.keywords.length ? `Keywords: ${escapeHtml(d.closure.keywords.join(", "))}` : ""
+          ].filter(Boolean).join("\n"));
+        })
+        .on("mouseleave", hideTooltip);
+
+      closureG.selectAll("text").data(closureBands).enter().append("text")
+        .attr("class","closureBandLabel")
+        .attr("x", d => x(isoToJSDate(d.closure.startISO)) + 4)
+        .attr("y", d => (y(d.lane) ?? 0) + 11)
+        .text(d => shortLabel(d.closure.label || d.closure.closureType || "Closure", 18))
+        .style("pointer-events","none")
+        .each(function(d) {
+          const a = x(isoToJSDate(d.closure.startISO));
+          const b = x(DateTime.fromISO(d.closure.finishISO, { zone: "utc" }).plus({ days: 1 }).toJSDate());
+          if ((b - a) < 70) d3.select(this).remove();
+        });
+    }
+
+    if (showModuleDuration && durationTasks.length) {
+      const durationG = g.append("g");
+
+      durationG.selectAll("rect").data(durationTasks).enter().append("rect")
+        .attr("class","moduleDurationBand")
+        .attr("x", d => x(isoToJSDate(d.startISO)))
+        .attr("y", d => (y(laneKey(d)) ?? 0) + Math.max(1, y.bandwidth() * 0.18))
+        .attr("width", barWidth)
+        .attr("height", Math.max(8, y.bandwidth() * 0.64))
+        .on("mousemove", (evt, d) => showTooltip(evt, d))
+        .on("mouseleave", hideTooltip);
+
+      durationG.selectAll("text").data(durationTasks).enter().append("text")
+        .attr("class","moduleDurationBandLabel")
+        .attr("x", d => x(isoToJSDate(d.startISO)) + 6)
+        .attr("y", d => (y(laneKey(d)) ?? 0) + Math.max(1, y.bandwidth() * 0.18) + 11)
+        .text("Module duration")
+        .style("pointer-events","none")
+        .each(function(d) { if (barWidth(d) < 90) d3.select(this).remove(); });
+    }
+
+    g.append("g").selectAll("rect").data(mainTasks).enter().append("rect")
+      .attr("class","task")
+      .attr("x", d => x(isoToJSDate(d.startISO)))
+      .attr("y", d => (y(laneKey(d)) ?? 0) + 1)
+      .attr("width", barWidth)
+      .attr("height", Math.max(10, y.bandwidth() - 2))
+      .attr("fill", d => likelihoodColour(d.likelihood))
+      .on("mousemove", (evt, d) => showTooltip(evt, d))
+      .on("mouseleave", hideTooltip);
+
     g.append("g").selectAll("line").data(lanes).enter().append("line")
-      .attr("x1",0).attr("x2",innerW)
-      .attr("y1",d=>(y(d)??0)+y.bandwidth()).attr("y2",d=>(y(d)??0)+y.bandwidth())
+      .attr("x1",0).attr("x2", innerW)
+      .attr("y1", d => (y(d) ?? 0) + y.bandwidth())
+      .attr("y2", d => (y(d) ?? 0) + y.bandwidth())
       .attr("stroke","#171b24").attr("stroke-width",1);
 
-    svgG.append("text").attr("x",margin.left).attr("y",18).attr("fill","#aeb6c6").attr("font-size",12)
-      .text("Lanes: course · module (each task plotted by its date range)");
+    svgG.append("text").attr("x", margin.left).attr("y",18).attr("fill","#aeb6c6").attr("font-size",12)
+      .text(
+        (showModuleDuration
+          ? "Lanes: course · module (Module Duration shown as an overlay; other tasks shown as bars)"
+          : "Lanes: course · module (Module Duration hidden; other tasks shown as bars)") +
+        (showClosures && closureEntries.length ? "; closures shown as site overlays" : "")
+      );
   }
 
   // ── Severity lines (per course) ──────────────────────────────────────────────
+
   function drawSeverityLines(tasks) {
     svgH.selectAll("*").remove();
-    const [width,height]=[1400,520];
-    svgH.attr("width",width).attr("height",height);
+    const [width, height] = [1400, 520];
+    svgH.attr("width", width).attr("height", height);
     if (!tasks.length) return;
 
-    const courses = uniqueSorted(tasks.map(t=>t.course));
-    const weeks   = buildWeeks(d3.min(tasks,d=>d.startISO), d3.max(tasks,d=>d.finishISO));
-    const totals  = aggregateWeekly(tasks, t=>t.course);
-    const series  = courses.map(c=>({
-      course:c, _key:c,
-      values: weeks.map(w=>({weekISO:w, date:isoToJSDate(w), value:totals.get(`${c}||${w}`)||0}))
+    const courses = uniqueSorted(tasks.map(t => t.course));
+    const weeks   = buildWeeks(d3.min(tasks, d => d.startISO), d3.max(tasks, d => d.finishISO));
+    const totals  = aggregateWeekly(tasks, t => t.course);
+    const series  = courses.map(c => ({
+      course: c, _key: c,
+      values: weeks.map(w => ({ weekISO: w, date: isoToJSDate(w), value: totals.get(`${c}||${w}`) || 0 }))
     }));
 
-    const maxVal = d3.max(series, s=>d3.max(s.values,v=>v.value))||1;
-    const margin = {top:30, right:220, bottom:40, left:60};
-    const innerW = width-margin.left-margin.right;
-    const innerH = height-margin.top-margin.bottom;
+    const maxVal = d3.max(series, s => d3.max(s.values, v => v.value)) || 1;
+    const margin = { top: 30, right: 220, bottom: 40, left: 60 };
+    const innerW = width - margin.left - margin.right;
+    const innerH = height - margin.top  - margin.bottom;
 
     const x = d3.scaleTime()
-      .domain([isoToJSDate(weeks[0]), DateTime.fromISO(weeks[weeks.length-1],{zone:"utc"}).plus({weeks:1}).toJSDate()])
-      .range([0,innerW]);
-    const y = d3.scaleLinear().domain([0,maxVal]).nice().range([innerH,0]);
+      .domain([isoToJSDate(weeks[0]), DateTime.fromISO(weeks[weeks.length - 1], { zone: "utc" }).plus({ weeks: 1 }).toJSDate()])
+      .range([0, innerW]);
+    const y = d3.scaleLinear().domain([0, maxVal]).nice().range([innerH, 0]);
 
-    const g = svgH.append("g").attr("transform",`translate(${margin.left},${margin.top})`);
+    const g = svgH.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
     addGridAndAxes(g, x, y, innerW, innerH, d3.timeWeek.every(2), 6);
 
-    const colour = d3.scaleOrdinal().domain(courses).range(d3.schemeTableau10.concat(d3.schemeSet3).slice(0,Math.max(10,courses.length)));
-    addLinesAndDots(g, x, y, series, "value", d=>colour(d._key||d.course), (evt,d) => {
-      const dt = DateTime.fromISO(d.weekISO,{zone:"utc"});
-      tooltip.innerHTML = `<strong>${d._key}</strong>\nWeek commencing: ${dt.toFormat("dd LLL yyyy")}\nWeekly severity: ${d.value.toFixed(0)}`;
-      tooltip.style.opacity="1"; tooltip.style.transform="translateY(0px)"; placeTooltip(evt);
+    const colour = d3.scaleOrdinal().domain(courses)
+      .range(d3.schemeTableau10.concat(d3.schemeSet3).slice(0, Math.max(10, courses.length)));
+
+    addLinesAndDots(g, x, y, series, "value", d => colour(d._key || d.course), (evt, d) => {
+      showWeekTooltip(evt, d._key, d.weekISO, d.value);
     });
 
-    addRightLegend(svgH, "Courses", courses, d=>colour(d), margin, innerW);
+    addRightLegend(svgH, "Courses", courses, d => colour(d), margin, innerW);
   }
 
-  // ── HTML escape helper ───────────────────────────────────────────────────────
-  const escapeHtml = str => String(str)
-    .replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;")
-    .replaceAll('"',"&quot;").replaceAll("'","&#039;");
-
   // ── Course stats table ───────────────────────────────────────────────────────
+
   function renderCourseStats(tasks) {
-    const el = $("courseStatsBody");
+    const el = document.getElementById("courseStatsBody");
     if (!el) return;
     if (!tasks || !tasks.length) {
       el.innerHTML = `<div class="note">No tasks to summarise (check filters).</div>`;
-      if (statsMeta) statsMeta.innerHTML = "";
+      statsMeta.innerHTML = "";
       return;
     }
+
     const byCourse = new Map();
     for (const t of tasks) {
-      const s = DateTime.fromISO(t.startISO,{zone:"utc"}).startOf("day");
-      const f = DateTime.fromISO(t.finishISO,{zone:"utc"}).startOf("day");
-      if (!s.isValid||!f.isValid) continue;
-      const days = Math.max(1, Math.floor(f.diff(s,"days").days)+1);
-      const c = t.course||"—";
-      if (!byCourse.has(c)) byCourse.set(c,{course:c,totalSeverity:0,totalTaskDays:0,tasksCount:0});
+      const s = DateTime.fromISO(t.startISO,  { zone: "utc" }).startOf("day");
+      const f = DateTime.fromISO(t.finishISO, { zone: "utc" }).startOf("day");
+      if (!s.isValid || !f.isValid) continue;
+      const days = Math.max(1, Math.floor(f.diff(s, "days").days) + 1);
+      const c    = t.course || "—";
+      if (!byCourse.has(c)) byCourse.set(c, { course: c, totalSeverity: 0, totalTaskDays: 0, tasksCount: 0 });
       const agg = byCourse.get(c);
-      agg.totalSeverity  += (t.severityPerDay||0)*days;
-      agg.totalTaskDays  += days;
-      agg.tasksCount     += 1;
+      agg.totalSeverity += (t.severityPerDay || 0) * days;
+      agg.totalTaskDays += days;
+      agg.tasksCount    += 1;
     }
+
     const rows = Array.from(byCourse.values())
-      .map(r=>({...r, avgSeverityPerDay:r.totalTaskDays?(r.totalSeverity/r.totalTaskDays):0}))
-      .sort((a,b)=>b.totalSeverity-a.totalSeverity);
-    const totSev  = rows.reduce((a,r)=>a+r.totalSeverity,0);
-    const totDays = rows.reduce((a,r)=>a+r.totalTaskDays,0);
-    const totTasks= rows.reduce((a,r)=>a+r.tasksCount,0);
-    if (statsMeta) statsMeta.innerHTML =
+      .map(r => ({ ...r, avgSeverityPerDay: r.totalTaskDays ? r.totalSeverity / r.totalTaskDays : 0 }))
+      .sort((a, b) => b.totalSeverity - a.totalSeverity);
+
+    const totSev   = rows.reduce((a, r) => a + r.totalSeverity,  0);
+    const totDays  = rows.reduce((a, r) => a + r.totalTaskDays,  0);
+    const totTasks = rows.reduce((a, r) => a + r.tasksCount,     0);
+
+    statsMeta.innerHTML =
       `<span class="pill"><strong>${rows.length}</strong> courses</span>` +
       `<span class="pill"><strong>${totTasks}</strong> tasks</span>` +
       `<span class="pill"><strong>${totSev.toFixed(0)}</strong> total severity</span>`;
-    const top = rows.slice(0,10);
+
+    const top = rows.slice(0, 10);
     el.innerHTML = `
       <div class="stats-kpi">
-        <div class="box"><div class="big">${rows[0]?escapeHtml(rows[0].course):"—"}</div><div class="small">Highest total severity</div></div>
-        <div class="box"><div class="big">${(rows[0]?rows[0].totalSeverity:0).toFixed(0)}</div><div class="small">Top course severity</div></div>
+        <div class="box"><div class="big">${rows[0] ? escapeHtml(rows[0].course) : "—"}</div><div class="small">Highest total severity</div></div>
+        <div class="box"><div class="big">${(rows[0] ? rows[0].totalSeverity : 0).toFixed(0)}</div><div class="small">Top course severity</div></div>
         <div class="box"><div class="big">${totDays}</div><div class="small">Task-days (all courses)</div></div>
-        <div class="box"><div class="big">${(totDays?(totSev/totDays):0).toFixed(2)}</div><div class="small">Average severity per day (all)</div></div>
+        <div class="box"><div class="big">${(totDays ? totSev / totDays : 0).toFixed(2)}</div><div class="small">Average severity per day (all)</div></div>
       </div>
       <table class="stats-table">
         <thead><tr><th>Rank</th><th>Course</th><th class="num">Total severity</th><th class="num">Task-days</th><th class="num">Tasks</th><th class="num">Avg severity/day</th></tr></thead>
-        <tbody>${top.map((r,i)=>`<tr><td style="color:#aeb6c6;">${i+1}</td><td>${escapeHtml(r.course)}</td><td class="num">${r.totalSeverity.toFixed(0)}</td><td class="num">${r.totalTaskDays}</td><td class="num">${r.tasksCount}</td><td class="num">${r.avgSeverityPerDay.toFixed(2)}</td></tr>`).join("")}</tbody>
+        <tbody>${top.map((r, i) => `<tr>
+          <td style="color:#aeb6c6;">${i + 1}</td>
+          <td>${escapeHtml(r.course)}</td>
+          <td class="num">${r.totalSeverity.toFixed(0)}</td>
+          <td class="num">${r.totalTaskDays}</td>
+          <td class="num">${r.tasksCount}</td>
+          <td class="num">${r.avgSeverityPerDay.toFixed(2)}</td>
+        </tr>`).join("")}</tbody>
       </table>`;
   }
 
-  // ── Heat blocks ─────────────────────────────────────────────────────────────
+  // ── Heat blocks ──────────────────────────────────────────────────────────────
+
   function drawHeatBlocks(tasks) {
     const svgB = d3.select("#heatBlocks");
     if (svgB.empty()) return;
     svgB.selectAll("*").remove();
     const width = 1400;
-    if (!tasks||!tasks.length) { svgB.attr("width",width).attr("height",120); return; }
+    if (!tasks || !tasks.length) { svgB.attr("width", width).attr("height", 120); return; }
 
-    const courses = uniqueSorted(tasks.map(t=>t.course));
-    const weeks   = buildWeeks(d3.min(tasks,d=>d.startISO), d3.max(tasks,d=>d.finishISO));
-    const totals  = aggregateWeekly(tasks, t=>t.course);
-    const data    = courses.flatMap(c => weeks.map(w=>({course:c, week:w, value:totals.get(`${c}||${w}`)||0})));
-    const maxVal  = d3.max(data,d=>d.value)||1;
-    const height  = Math.max(220, 70+courses.length*18);
+    const courses = uniqueSorted(tasks.map(t => t.course));
+    const weeks   = buildWeeks(d3.min(tasks, d => d.startISO), d3.max(tasks, d => d.finishISO));
+    const totals  = aggregateWeekly(tasks, t => t.course);
+    const data    = courses.flatMap(c => weeks.map(w => ({ course: c, week: w, value: totals.get(`${c}||${w}`) || 0 })));
+    const maxVal  = d3.max(data, d => d.value) || 1;
+    const height  = Math.max(220, 70 + courses.length * 18);
 
-    svgB.attr("width",width).attr("height",height);
-    const margin = {top:30, right:16, bottom:40, left:240};
-    const innerW = width-margin.left-margin.right;
-    const innerH = height-margin.top-margin.bottom;
+    svgB.attr("width", width).attr("height", height);
+    const margin = { top: 30, right: 16, bottom: 40, left: 240 };
+    const innerW = width - margin.left - margin.right;
+    const innerH = height - margin.top  - margin.bottom;
 
-    const x = d3.scaleBand().domain(weeks).range([0,innerW]).padding(0.08);
-    const y = d3.scaleBand().domain(courses).range([0,innerH]).padding(0.14);
-    const colour = d3.scaleLinear().domain([0,maxVal]).range(["rgba(15,17,24,1)","rgba(255,107,107,.85)"]);
+    const x      = d3.scaleBand().domain(weeks).range([0, innerW]).padding(0.08);
+    const y      = d3.scaleBand().domain(courses).range([0, innerH]).padding(0.14);
+    const colour = d3.scaleLinear().domain([0, maxVal]).range(["rgba(15,17,24,1)","rgba(255,107,107,.85)"]);
 
-    const g = svgB.append("g").attr("transform",`translate(${margin.left},${margin.top})`);
-    const tickWeeks = weeks.filter((_,i)=>i%2===0);
-    const xAxisG = g.append("g").attr("class","axis").attr("transform",`translate(0,${innerH})`)
-      .call(d3.axisBottom(x).tickValues(tickWeeks).tickFormat(w=>DateTime.fromISO(w,{zone:"utc"}).toFormat("dd LLL")));
+    const g = svgB.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+    const tickWeeks = weeks.filter((_, i) => i % 2 === 0);
+    const xAxisG = g.append("g").attr("class","axis").attr("transform", `translate(0,${innerH})`)
+      .call(d3.axisBottom(x).tickValues(tickWeeks)
+        .tickFormat(w => DateTime.fromISO(w, { zone: "utc" }).toFormat("dd LLL")));
     angleXAxis(xAxisG);
     g.append("g").attr("class","axis").call(d3.axisLeft(y).tickSize(0));
 
     g.selectAll("rect").data(data).enter().append("rect")
       .attr("class","heatcell")
-      .attr("x",d=>x(d.week)).attr("y",d=>y(d.course))
-      .attr("width",x.bandwidth()).attr("height",y.bandwidth())
-      .attr("fill",d=>colour(d.value))
-      .on("mousemove",(evt,d)=>{
-        const dt = DateTime.fromISO(d.week,{zone:"utc"});
-        tooltip.innerHTML = `<strong>${d.course}</strong>\nWeek commencing: ${dt.toFormat("dd LLL yyyy")}\nWeekly severity: ${d.value.toFixed(0)}`;
-        tooltip.style.opacity="1"; tooltip.style.transform="translateY(0px)"; placeTooltip(evt);
-      }).on("mouseleave",hideTooltip);
+      .attr("x", d => x(d.week)).attr("y", d => y(d.course))
+      .attr("width", x.bandwidth()).attr("height", y.bandwidth())
+      .attr("fill", d => colour(d.value))
+      .on("mousemove", (evt, d) => showWeekTooltip(evt, d.course, d.week, d.value))
+      .on("mouseleave", hideTooltip);
 
-    svgB.append("text").attr("x",margin.left).attr("y",18).attr("fill","#aeb6c6").attr("font-size",12)
+    svgB.append("text").attr("x", margin.left).attr("y",18).attr("fill","#aeb6c6").attr("font-size",12)
       .text("Weekly severity blocks by course (sheet).");
   }
 
-  // ── Total curve ─────────────────────────────────────────────────────────────
+  // ── Total curve ──────────────────────────────────────────────────────────────
+
   function drawTotalCurve(tasks) {
     const svgT = d3.select("#totalCurve");
     if (svgT.empty()) return;
     svgT.selectAll("*").remove();
-    const [width,height]=[1400,260];
-    svgT.attr("width",width).attr("height",height);
-    if (!tasks||!tasks.length) return;
+    const [width, height] = [1400, 260];
+    svgT.attr("width", width).attr("height", height);
+    if (!tasks || !tasks.length) return;
 
-    const weeks = buildWeeks(d3.min(tasks,d=>d.startISO), d3.max(tasks,d=>d.finishISO));
+    const isTentative = t => String(t.status || "").toLowerCase().includes("tent");
+    const weeks = buildWeeks(d3.min(tasks, d => d.startISO), d3.max(tasks, d => d.finishISO));
+
+    // Aggregate separately by status
     const totalsKnown = new Map(), totalsTent = new Map();
-    const isTentative = t => String(t.status||"").toLowerCase().includes("tent");
-
     for (const t of tasks) {
-      const s = DateTime.fromISO(t.startISO,{zone:"utc"}).startOf("day");
-      const f = DateTime.fromISO(t.finishISO,{zone:"utc"}).startOf("day");
-      if (!s.isValid||!f.isValid) continue;
-      for (let d=s; d<=f; d=d.plus({days:1})) {
+      const s = DateTime.fromISO(t.startISO,  { zone: "utc" }).startOf("day");
+      const f = DateTime.fromISO(t.finishISO, { zone: "utc" }).startOf("day");
+      if (!s.isValid || !f.isValid) continue;
+      const map = isTentative(t) ? totalsTent : totalsKnown;
+      const add = t.severityPerDay || 0;
+      for (let d = s; d <= f; d = d.plus({ days: 1 })) {
         const w = startOfISOWeek(d).toISODate();
-        const add = t.severityPerDay||0;
-        const map = isTentative(t) ? totalsTent : totalsKnown;
-        map.set(w,(map.get(w)||0)+add);
+        map.set(w, (map.get(w) || 0) + add);
       }
     }
 
-    const data = weeks.map(w=>({
-      weekISO:w, date:isoToJSDate(w),
-      known: totalsKnown.get(w)||0, tentative: totalsTent.get(w)||0,
-      total: (totalsKnown.get(w)||0)+(totalsTent.get(w)||0)
+    const data = weeks.map(w => ({
+      weekISO: w, date: isoToJSDate(w),
+      known:     totalsKnown.get(w) || 0,
+      tentative: totalsTent.get(w)  || 0,
+      total:    (totalsKnown.get(w) || 0) + (totalsTent.get(w) || 0)
     }));
 
-    const maxVal = d3.max(data,d=>d.total)||1;
-    const margin = {top:24, right:140, bottom:36, left:60};
-    const innerW = width-margin.left-margin.right;
-    const innerH = height-margin.top-margin.bottom;
+    const maxVal = d3.max(data, d => d.total) || 1;
+    const margin = { top: 24, right: 140, bottom: 36, left: 60 };
+    const innerW = width - margin.left - margin.right;
+    const innerH = height - margin.top  - margin.bottom;
 
     const x = d3.scaleTime()
-      .domain([data[0].date, DateTime.fromISO(weeks[weeks.length-1],{zone:"utc"}).plus({weeks:1}).toJSDate()])
-      .range([0,innerW]);
-    const y = d3.scaleLinear().domain([0,maxVal]).nice().range([innerH,0]);
+      .domain([data[0].date, DateTime.fromISO(weeks[weeks.length - 1], { zone: "utc" }).plus({ weeks: 1 }).toJSDate()])
+      .range([0, innerW]);
+    const y = d3.scaleLinear().domain([0, maxVal]).nice().range([innerH, 0]);
 
-    const g = svgT.append("g").attr("transform",`translate(${margin.left},${margin.top})`);
+    const g = svgT.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
     addGridAndAxes(g, x, y, innerW, innerH, d3.timeWeek.every(2), 4);
 
-    const line = d3.line().x(d=>x(d.date)).y(d=>y(d.value)).curve(d3.curveMonotoneX);
+    const line   = d3.line().x(d => x(d.date)).y(d => y(d.value)).curve(d3.curveMonotoneX);
     const stroke = "rgba(122,162,255,.95)";
 
-    [["known",false],["tentative",true]].forEach(([key,dashed])=>{
+    [["known", false], ["tentative", true]].forEach(([key, dashed]) => {
       const path = g.append("path")
-        .datum(data.map(d=>({...d,value:d[key]})))
-        .attr("fill","none").attr("stroke",stroke).attr("stroke-width",2.5).attr("d",line);
+        .datum(data.map(d => ({ ...d, value: d[key] })))
+        .attr("fill","none").attr("stroke", stroke).attr("stroke-width",2.5).attr("d", line);
       if (dashed) path.attr("stroke-dasharray","7,6").attr("opacity",.9);
     });
 
     g.selectAll("circle").data(data).enter().append("circle")
-      .attr("cx",d=>x(d.date)).attr("cy",d=>y(d.total)).attr("r",3)
+      .attr("cx", d => x(d.date)).attr("cy", d => y(d.total)).attr("r",3)
       .attr("fill","rgba(255,184,107,.90)")
-      .on("mousemove",(evt,d)=>{
-        const dt=DateTime.fromISO(d.weekISO,{zone:"utc"});
-        tooltip.innerHTML = `<strong>All programmes</strong>\nWeek commencing: ${dt.toFormat("dd LLL yyyy")}\nKnown: ${d.known.toFixed(0)}\nTentative: ${d.tentative.toFixed(0)}\nTotal: ${d.total.toFixed(0)}`;
-        tooltip.style.opacity="1"; tooltip.style.transform="translateY(0px)"; placeTooltip(evt);
-      }).on("mouseleave",hideTooltip);
+      .on("mousemove", (evt, d) => {
+        const dt = DateTime.fromISO(d.weekISO, { zone: "utc" });
+        showTooltipRaw(evt,
+          `<strong>All programmes</strong>\nWeek commencing: ${dt.toFormat("dd LLL yyyy")}\nKnown: ${d.known.toFixed(0)}\nTentative: ${d.tentative.toFixed(0)}\nTotal: ${d.total.toFixed(0)}`
+        );
+      }).on("mouseleave", hideTooltip);
 
-    const leg = svgT.append("g").attr("transform",`translate(${margin.left+innerW+10},${margin.top+10})`);
-    [[0,"Known",false],[18,"Tentative",true]].forEach(([y,label,dashed])=>{
-      const l = leg.append("line").attr("x1",0).attr("x2",28).attr("y1",y).attr("y2",y)
-        .attr("stroke",stroke).attr("stroke-width",3);
+    // Inline legend
+    const leg = svgT.append("g").attr("transform", `translate(${margin.left + innerW + 10},${margin.top + 10})`);
+    [[0,"Known",false],[18,"Tentative",true]].forEach(([yPos, label, dashed]) => {
+      const l = leg.append("line").attr("x1",0).attr("x2",28).attr("y1",yPos).attr("y2",yPos)
+        .attr("stroke", stroke).attr("stroke-width",3);
       if (dashed) l.attr("stroke-dasharray","7,6");
-      leg.append("text").attr("x",34).attr("y",y+4).attr("fill","#aeb6c6").attr("font-size",11).text(label);
+      leg.append("text").attr("x",34).attr("y",yPos + 4).attr("fill","#aeb6c6").attr("font-size",11).text(label);
     });
 
-    svgT.append("text").attr("x",margin.left).attr("y",16).attr("fill","#aeb6c6").attr("font-size",12)
+    svgT.append("text").attr("x", margin.left).attr("y",16).attr("fill","#aeb6c6").attr("font-size",12)
       .text("Total weekly severity split by status (known solid, tentative dashed).");
   }
 
   // ── Type stacked ─────────────────────────────────────────────────────────────
+
   function drawTypeStacked(tasks) {
     const svgS = d3.select("#typeStack");
     if (svgS.empty()) return;
     svgS.selectAll("*").remove();
-    const [width,height]=[1400,360];
-    svgS.attr("width",width).attr("height",height);
-    if (!tasks||!tasks.length) return;
+    const [width, height] = [1400, 360];
+    svgS.attr("width", width).attr("height", height);
+    if (!tasks || !tasks.length) return;
 
-    const types = uniqueSorted(tasks.map(t=>t.type));
-    const weeks = buildWeeks(d3.min(tasks,d=>d.startISO), d3.max(tasks,d=>d.finishISO));
-    const weekMap = new Map(weeks.map(w=>[w,{weekISO:w, date:isoToJSDate(w), ...Object.fromEntries(types.map(ty=>[ty,0]))}]));
+    const types  = uniqueSorted(tasks.map(t => t.type));
+    const weeks  = buildWeeks(d3.min(tasks, d => d.startISO), d3.max(tasks, d => d.finishISO));
+
+    // Initialise one row per week with all type counts at 0
+    const weekMap = new Map(weeks.map(w => [
+      w,
+      { weekISO: w, date: isoToJSDate(w), ...Object.fromEntries(types.map(ty => [ty, 0])) }
+    ]));
 
     for (const t of tasks) {
-      const s=DateTime.fromISO(t.startISO,{zone:"utc"}).startOf("day");
-      const f=DateTime.fromISO(t.finishISO,{zone:"utc"}).startOf("day");
-      if (!s.isValid||!f.isValid) continue;
-      for (let d=s; d<=f; d=d.plus({days:1})) {
+      const s = DateTime.fromISO(t.startISO,  { zone: "utc" }).startOf("day");
+      const f = DateTime.fromISO(t.finishISO, { zone: "utc" }).startOf("day");
+      if (!s.isValid || !f.isValid) continue;
+      for (let d = s; d <= f; d = d.plus({ days: 1 })) {
         const row = weekMap.get(startOfISOWeek(d).toISODate());
-        if (row) row[t.type]=(row[t.type]||0)+(t.severityPerDay||0);
+        if (row) row[t.type] = (row[t.type] || 0) + (t.severityPerDay || 0);
       }
     }
 
-    const data    = weeks.map(w=>weekMap.get(w));
+    const data    = weeks.map(w => weekMap.get(w));
     const series  = d3.stack().keys(types)(data);
-    const maxVal  = d3.max(series,s=>d3.max(s,d=>d[1]))||1;
-    const colour  = d3.scaleOrdinal().domain(types).range(d3.schemeTableau10.concat(d3.schemeSet3).slice(0,Math.max(10,types.length)));
-    const margin  = {top:26, right:220, bottom:40, left:60};
-    const innerW  = width-margin.left-margin.right;
-    const innerH  = height-margin.top-margin.bottom;
+    const maxVal  = d3.max(series, s => d3.max(s, d => d[1])) || 1;
+    const colour  = d3.scaleOrdinal().domain(types)
+      .range(d3.schemeTableau10.concat(d3.schemeSet3).slice(0, Math.max(10, types.length)));
+    const margin  = { top: 26, right: 220, bottom: 40, left: 60 };
+    const innerW  = width - margin.left - margin.right;
+    const innerH  = height - margin.top  - margin.bottom;
 
     const x = d3.scaleTime()
-      .domain([data[0].date, DateTime.fromISO(weeks[weeks.length-1],{zone:"utc"}).plus({weeks:1}).toJSDate()])
-      .range([0,innerW]);
-    const y = d3.scaleLinear().domain([0,maxVal]).nice().range([innerH,0]);
+      .domain([data[0].date, DateTime.fromISO(weeks[weeks.length - 1], { zone: "utc" }).plus({ weeks: 1 }).toJSDate()])
+      .range([0, innerW]);
+    const y = d3.scaleLinear().domain([0, maxVal]).nice().range([innerH, 0]);
 
-    const g = svgS.append("g").attr("transform",`translate(${margin.left},${margin.top})`);
+    const g = svgS.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
     addGridAndAxes(g, x, y, innerW, innerH, d3.timeWeek.every(2), 5);
 
     g.append("g").selectAll("path").data(series).enter().append("path")
-      .attr("d", d3.area().x(d=>x(d.data.date)).y0(d=>y(d[0])).y1(d=>y(d[1])).curve(d3.curveMonotoneX))
-      .attr("fill",d=>colour(d.key)).attr("opacity",.75);
+      .attr("d", d3.area().x(d => x(d.data.date)).y0(d => y(d[0])).y1(d => y(d[1])).curve(d3.curveMonotoneX))
+      .attr("fill", d => colour(d.key)).attr("opacity", .75);
 
-    const hoverW = innerW/Math.max(1,data.length);
+    // Invisible hover targets per-week column
+    const hoverW = innerW / Math.max(1, data.length);
     g.append("g").selectAll("rect").data(data).enter().append("rect")
-      .attr("x",d=>x(d.date)).attr("y",0).attr("width",hoverW).attr("height",innerH).attr("fill","transparent")
-      .on("mousemove",(evt,d)=>{
-        const dt=DateTime.fromISO(d.weekISO,{zone:"utc"});
-        const total=types.reduce((a,k)=>a+(d[k]||0),0);
-        const top=[...types].sort((a,b)=>(d[b]||0)-(d[a]||0)).slice(0,6);
-        tooltip.innerHTML=`<strong>All programmes</strong>\nWeek commencing: ${dt.toFormat("dd LLL yyyy")}\nTotal severity: ${total.toFixed(0)}\n`+top.map(k=>`${k}: ${(d[k]||0).toFixed(0)}`).join("\n");
-        tooltip.style.opacity="1"; tooltip.style.transform="translateY(0px)"; placeTooltip(evt,380,260);
-      }).on("mouseleave",hideTooltip);
+      .attr("x", d => x(d.date)).attr("y",0).attr("width", hoverW).attr("height", innerH)
+      .attr("fill","transparent")
+      .on("mousemove", (evt, d) => {
+        const dt    = DateTime.fromISO(d.weekISO, { zone: "utc" });
+        const total = types.reduce((a, k) => a + (d[k] || 0), 0);
+        const top   = [...types].sort((a, b) => (d[b] || 0) - (d[a] || 0)).slice(0, 6);
+        showTooltipRaw(evt,
+          `<strong>All programmes</strong>\nWeek commencing: ${dt.toFormat("dd LLL yyyy")}\nTotal severity: ${total.toFixed(0)}\n` +
+          top.map(k => `${k}: ${(d[k] || 0).toFixed(0)}`).join("\n"),
+          380, 260
+        );
+      }).on("mouseleave", hideTooltip);
 
-    addRightLegend(svgS, "Task type", types, d=>colour(d), margin, innerW);
-    svgS.append("text").attr("x",margin.left).attr("y",16).attr("fill","#aeb6c6").attr("font-size",12)
+    addRightLegend(svgS, "Task type", types, d => colour(d), margin, innerW);
+    svgS.append("text").attr("x", margin.left).attr("y",16).attr("fill","#aeb6c6").attr("font-size",12)
       .text("Weekly severity by task type (stacked).");
   }
 
   // ── Location curves ──────────────────────────────────────────────────────────
+
   function drawLocationCurves(tasks) {
     const svgL = d3.select("#locationCurves");
     if (svgL.empty()) return;
     svgL.selectAll("*").remove();
-    const [width,height]=[1400,360];
-    svgL.attr("width",width).attr("height",height);
-    if (!tasks||!tasks.length) return;
+    const [width, height] = [1400, 360];
+    svgL.attr("width", width).attr("height", height);
+    if (!tasks || !tasks.length) return;
 
-    const locName = t => { const r=String(t.location||"").trim(); return r?r:"Unspecified"; };
-    const weeks   = buildWeeks(d3.min(tasks,d=>d.startISO), d3.max(tasks,d=>d.finishISO));
-    const totals  = new Map(), locTotals = new Map();
+    const locName = t => { const r = String(t.location || "").trim(); return r ? r : "Unspecified"; };
+    const weeks   = buildWeeks(d3.min(tasks, d => d.startISO), d3.max(tasks, d => d.finishISO));
 
+    const totals   = new Map(), locTotals = new Map();
     for (const t of tasks) {
-      const loc=locName(t);
-      const s=DateTime.fromISO(t.startISO,{zone:"utc"}).startOf("day");
-      const f=DateTime.fromISO(t.finishISO,{zone:"utc"}).startOf("day");
-      if (!s.isValid||!f.isValid) continue;
-      for (let d=s; d<=f; d=d.plus({days:1})) {
-        const w=startOfISOWeek(d).toISODate();
-        const add=t.severityPerDay||0;
-        totals.set(`${loc}||${w}`, (totals.get(`${loc}||${w}`)||0)+add);
-        locTotals.set(loc, (locTotals.get(loc)||0)+add);
+      const loc = locName(t);
+      const s   = DateTime.fromISO(t.startISO,  { zone: "utc" }).startOf("day");
+      const f   = DateTime.fromISO(t.finishISO, { zone: "utc" }).startOf("day");
+      if (!s.isValid || !f.isValid) continue;
+      const add = t.severityPerDay || 0;
+      for (let d = s; d <= f; d = d.plus({ days: 1 })) {
+        const w = startOfISOWeek(d).toISODate();
+        totals.set(`${loc}||${w}`, (totals.get(`${loc}||${w}`) || 0) + add);
+        locTotals.set(loc, (locTotals.get(loc) || 0) + add);
       }
     }
 
-    const ranked = Array.from(locTotals.entries()).sort((a,b)=>b[1]-a[1]);
-    const topN=8, keep=new Set(ranked.slice(0,topN).map(d=>d[0]));
-    const locations=[...ranked.slice(0,topN).map(d=>d[0]), ...(ranked.length>topN?["Other"]:[])];
+    const ranked    = Array.from(locTotals.entries()).sort((a, b) => b[1] - a[1]);
+    const topN      = 8;
+    const locations = [...ranked.slice(0, topN).map(d => d[0]), ...(ranked.length > topN ? ["Other"] : [])];
 
-    const series = locations.map(loc=>({
-      loc, _key:loc,
-      values: weeks.map(w=>{
-        let v = loc==="Other"
-          ? ranked.slice(topN).reduce((a,[n])=>a+(totals.get(`${n}||${w}`)||0),0)
-          : (totals.get(`${loc}||${w}`)||0);
-        return {weekISO:w, date:isoToJSDate(w), value:v, _key:loc};
+    const series = locations.map(loc => ({
+      loc, _key: loc,
+      values: weeks.map(w => {
+        const v = loc === "Other"
+          ? ranked.slice(topN).reduce((a, [n]) => a + (totals.get(`${n}||${w}`) || 0), 0)
+          : (totals.get(`${loc}||${w}`) || 0);
+        return { weekISO: w, date: isoToJSDate(w), value: v, _key: loc };
       })
     }));
 
-    const maxVal=d3.max(series,s=>d3.max(s.values,v=>v.value))||1;
-    const colour=d3.scaleOrdinal().domain(locations).range(d3.schemeTableau10.concat(d3.schemeSet3).slice(0,Math.max(10,locations.length)));
-    const margin={top:30,right:220,bottom:40,left:60};
-    const innerW=width-margin.left-margin.right, innerH=height-margin.top-margin.bottom;
+    const maxVal = d3.max(series, s => d3.max(s.values, v => v.value)) || 1;
+    const colour = d3.scaleOrdinal().domain(locations)
+      .range(d3.schemeTableau10.concat(d3.schemeSet3).slice(0, Math.max(10, locations.length)));
+    const margin = { top: 30, right: 220, bottom: 40, left: 60 };
+    const innerW = width - margin.left - margin.right;
+    const innerH = height - margin.top  - margin.bottom;
 
-    const x=d3.scaleTime().domain([isoToJSDate(weeks[0]),DateTime.fromISO(weeks[weeks.length-1],{zone:"utc"}).plus({weeks:1}).toJSDate()]).range([0,innerW]);
-    const y=d3.scaleLinear().domain([0,maxVal]).nice().range([innerH,0]);
+    const x = d3.scaleTime()
+      .domain([isoToJSDate(weeks[0]), DateTime.fromISO(weeks[weeks.length - 1], { zone: "utc" }).plus({ weeks: 1 }).toJSDate()])
+      .range([0, innerW]);
+    const y = d3.scaleLinear().domain([0, maxVal]).nice().range([innerH, 0]);
 
-    const g=svgL.append("g").attr("transform",`translate(${margin.left},${margin.top})`);
-    addGridAndAxes(g,x,y,innerW,innerH,d3.timeWeek.every(2),5);
-    addLinesAndDots(g,x,y,series,"value",d=>colour(d._key),(evt,d)=>{
-      const dt=DateTime.fromISO(d.weekISO,{zone:"utc"});
-      tooltip.innerHTML=`<strong>${d._key}</strong>\nWeek commencing: ${dt.toFormat("dd LLL yyyy")}\nWeekly severity: ${d.value.toFixed(0)}`;
-      tooltip.style.opacity="1"; tooltip.style.transform="translateY(0px)"; placeTooltip(evt);
+    const g = svgL.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+    addGridAndAxes(g, x, y, innerW, innerH, d3.timeWeek.every(2), 5);
+    addLinesAndDots(g, x, y, series, "value", d => colour(d._key), (evt, d) => {
+      showWeekTooltip(evt, d._key, d.weekISO, d.value);
     });
-    addRightLegend(svgL,"Locations",locations,d=>colour(d),margin,innerW);
-    svgL.append("text").attr("x",margin.left).attr("y",18).attr("fill","#aeb6c6").attr("font-size",12)
+    addRightLegend(svgL, "Locations", locations, d => colour(d), margin, innerW);
+    svgL.append("text").attr("x", margin.left).attr("y",18).attr("fill","#aeb6c6").attr("font-size",12)
       .text("Weekly severity by location (top locations).");
   }
 
   // ── Theme bars ───────────────────────────────────────────────────────────────
+
   function drawThemeBars(tasks) {
     const svgTB = d3.select("#themeBars");
     if (svgTB.empty()) return;
     svgTB.selectAll("*").remove();
-    const [width,height]=[1400,320];
-    svgTB.attr("width",width).attr("height",height);
-    if (!tasks||!tasks.length) return;
+    const [width, height] = [1400, 320];
+    svgTB.attr("width", width).attr("height", height);
+    if (!tasks || !tasks.length) return;
 
     const totals = new Map();
     for (const t of tasks) {
-      const themes=(t.themes&&t.themes.length)?t.themes:[];
+      const themes = t.themes?.length ? t.themes : [];
       if (!themes.length) continue;
-      const s=DateTime.fromISO(t.startISO,{zone:"utc"}).startOf("day");
-      const f=DateTime.fromISO(t.finishISO,{zone:"utc"}).startOf("day");
-      if (!s.isValid||!f.isValid) continue;
-      const days=Math.max(1,Math.floor(f.diff(s,"days").days)+1);
-      const add=(t.severityPerDay||0)*days;
-      for (const th of themes) totals.set(th,(totals.get(th)||0)+add);
+      const s = DateTime.fromISO(t.startISO,  { zone: "utc" }).startOf("day");
+      const f = DateTime.fromISO(t.finishISO, { zone: "utc" }).startOf("day");
+      if (!s.isValid || !f.isValid) continue;
+      const days = Math.max(1, Math.floor(f.diff(s, "days").days) + 1);
+      const add  = (t.severityPerDay || 0) * days;
+      for (const th of themes) totals.set(th, (totals.get(th) || 0) + add);
     }
 
-    const rows = Array.from(totals.entries()).map(([theme,value])=>({theme,value})).sort((a,b)=>b.value-a.value).slice(0,18);
+    const rows = Array.from(totals.entries())
+      .map(([theme, value]) => ({ theme, value }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 18);
+
     if (!rows.length) {
-      svgTB.append("text").attr("x",16).attr("y",28).attr("fill","#aeb6c6").attr("font-size",12).text("No keywords found (add a Keyword column)."); return;
+      svgTB.append("text").attr("x",16).attr("y",28).attr("fill","#aeb6c6").attr("font-size",12)
+        .text("No keywords found (add a Keyword column).");
+      return;
     }
 
-    const maxVal=d3.max(rows,d=>d.value)||1;
-    const margin={top:26,right:20,bottom:24,left:240};
-    const innerW=width-margin.left-margin.right, innerH=height-margin.top-margin.bottom;
+    const maxVal = d3.max(rows, d => d.value) || 1;
+    const margin = { top: 26, right: 20, bottom: 24, left: 240 };
+    const innerW = width - margin.left - margin.right;
+    const innerH = height - margin.top  - margin.bottom;
 
-    const x=d3.scaleLinear().domain([0,maxVal]).nice().range([0,innerW]);
-    const y=d3.scaleBand().domain(rows.map(d=>d.theme)).range([0,innerH]).padding(0.18);
+    const x = d3.scaleLinear().domain([0, maxVal]).nice().range([0, innerW]);
+    const y = d3.scaleBand().domain(rows.map(d => d.theme)).range([0, innerH]).padding(0.18);
 
-    const g=svgTB.append("g").attr("transform",`translate(${margin.left},${margin.top})`);
-    g.append("g").attr("class","grid").call(d3.axisBottom(x).ticks(5).tickSize(innerH).tickFormat(()=>"")).selectAll("line").attr("transform",`translate(0,${-innerH})`);
+    const g = svgTB.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+    g.append("g").attr("class","grid")
+      .call(d3.axisBottom(x).ticks(5).tickSize(innerH).tickFormat(() => ""))
+      .selectAll("line").attr("transform", `translate(0,${-innerH})`);
     g.append("g").attr("class","axis").call(d3.axisLeft(y).tickSize(0));
-    g.append("g").attr("class","axis").attr("transform",`translate(0,${innerH})`).call(d3.axisBottom(x).ticks(5));
+    g.append("g").attr("class","axis").attr("transform", `translate(0,${innerH})`).call(d3.axisBottom(x).ticks(5));
 
     g.selectAll("rect").data(rows).enter().append("rect")
-      .attr("x",0).attr("y",d=>y(d.theme)).attr("height",y.bandwidth())
-      .attr("width",d=>Math.max(1,x(d.value))).attr("rx",6).attr("ry",6)
+      .attr("x",0).attr("y", d => y(d.theme)).attr("height", y.bandwidth())
+      .attr("width", d => Math.max(1, x(d.value))).attr("rx",6).attr("ry",6)
       .attr("fill","rgba(122,162,255,.60)").attr("stroke","rgba(0,0,0,.35)").attr("stroke-width",1)
-      .on("mousemove",(evt,d)=>{
-        tooltip.innerHTML=`<strong>${escapeHtml(d.theme)}</strong>\nTotal severity (task-days weighted): ${d.value.toFixed(0)}`;
-        tooltip.style.opacity="1"; tooltip.style.transform="translateY(0px)"; placeTooltip(evt);
-      }).on("mouseleave",hideTooltip);
+      .on("mousemove", (evt, d) => {
+        showTooltipRaw(evt, `<strong>${escapeHtml(d.theme)}</strong>\nTotal severity (task-days weighted): ${d.value.toFixed(0)}`);
+      }).on("mouseleave", hideTooltip);
 
-    svgTB.append("text").attr("x",margin.left).attr("y",18).attr("fill","#aeb6c6").attr("font-size",12).text("Top themes (ranked by total severity).");
+    svgTB.append("text").attr("x", margin.left).attr("y",18).attr("fill","#aeb6c6").attr("font-size",12)
+      .text("Top themes (ranked by total severity).");
   }
 
   // ── Theme trends (line chart) ────────────────────────────────────────────────
+
   function drawThemeTrends(tasks) {
     const svgTT = d3.select("#themeTrends");
     if (svgTT.empty()) return;
     svgTT.selectAll("*").remove();
-    const [width,height]=[1400,360];
-    svgTT.attr("width",width).attr("height",height);
-    if (!tasks||!tasks.length) return;
+    const [width, height] = [1400, 360];
+    svgTT.attr("width", width).attr("height", height);
+    if (!tasks || !tasks.length) return;
 
-    // Top themes by total severity
-    const totals=new Map();
+    // Rank themes by total severity
+    const totals = new Map();
     for (const t of tasks) {
-      const themes=(t.themes&&t.themes.length)?t.themes:[];
-      const s=DateTime.fromISO(t.startISO,{zone:"utc"}).startOf("day");
-      const f=DateTime.fromISO(t.finishISO,{zone:"utc"}).startOf("day");
-      if (!s.isValid||!f.isValid) continue;
-      const add=(t.severityPerDay||0)*(Math.max(1,Math.floor(f.diff(s,"days").days)+1));
-      for (const th of themes) totals.set(th,(totals.get(th)||0)+add);
+      const themes = t.themes?.length ? t.themes : [];
+      const s = DateTime.fromISO(t.startISO,  { zone: "utc" }).startOf("day");
+      const f = DateTime.fromISO(t.finishISO, { zone: "utc" }).startOf("day");
+      if (!s.isValid || !f.isValid) continue;
+      const add = (t.severityPerDay || 0) * Math.max(1, Math.floor(f.diff(s, "days").days) + 1);
+      for (const th of themes) totals.set(th, (totals.get(th) || 0) + add);
     }
-    const themesTop = Array.from(totals.entries()).sort((a,b)=>b[1]-a[1]).slice(0,8).map(d=>d[0]);
+    const themesTop = Array.from(totals.entries()).sort((a, b) => b[1] - a[1]).slice(0, 8).map(d => d[0]);
+
     if (!themesTop.length) {
-      svgTT.append("text").attr("x",16).attr("y",28).attr("fill","#aeb6c6").attr("font-size",12).text("No keywords found (add a Keyword column)."); return;
+      svgTT.append("text").attr("x",16).attr("y",28).attr("fill","#aeb6c6").attr("font-size",12)
+        .text("No keywords found (add a Keyword column).");
+      return;
     }
 
-    const weeks  = buildWeeks(d3.min(tasks,d=>d.startISO), d3.max(tasks,d=>d.finishISO));
+    const weeks  = buildWeeks(d3.min(tasks, d => d.startISO), d3.max(tasks, d => d.finishISO));
     const topSet = new Set(themesTop);
+
     const wkTotals = new Map();
     for (const t of tasks) {
-      const used=(t.themes||[]).filter(th=>topSet.has(th));
+      const used = (t.themes || []).filter(th => topSet.has(th));
       if (!used.length) continue;
-      const s=DateTime.fromISO(t.startISO,{zone:"utc"}).startOf("day");
-      const f=DateTime.fromISO(t.finishISO,{zone:"utc"}).startOf("day");
-      if (!s.isValid||!f.isValid) continue;
-      for (let d=s; d<=f; d=d.plus({days:1})) {
-        const w=startOfISOWeek(d).toISODate();
+      const s = DateTime.fromISO(t.startISO,  { zone: "utc" }).startOf("day");
+      const f = DateTime.fromISO(t.finishISO, { zone: "utc" }).startOf("day");
+      if (!s.isValid || !f.isValid) continue;
+      for (let d = s; d <= f; d = d.plus({ days: 1 })) {
+        const w = startOfISOWeek(d).toISODate();
         for (const th of used) {
-          const k=`${th}||${w}`;
-          wkTotals.set(k,(wkTotals.get(k)||0)+(t.severityPerDay||0));
+          const k = `${th}||${w}`;
+          wkTotals.set(k, (wkTotals.get(k) || 0) + (t.severityPerDay || 0));
         }
       }
     }
 
-    const series = themesTop.map(th=>({
-      theme:th, _key:th,
-      values: weeks.map(w=>({weekISO:w, date:isoToJSDate(w), value:wkTotals.get(`${th}||${w}`)||0, _key:th}))
+    const series = themesTop.map(th => ({
+      theme: th, _key: th,
+      values: weeks.map(w => ({ weekISO: w, date: isoToJSDate(w), value: wkTotals.get(`${th}||${w}`) || 0, _key: th }))
     }));
 
-    const maxVal=d3.max(series,s=>d3.max(s.values,v=>v.value))||1;
-    const colour=d3.scaleOrdinal().domain(themesTop).range(d3.schemeTableau10.concat(d3.schemeSet3).slice(0,Math.max(10,themesTop.length)));
-    const margin={top:30,right:220,bottom:40,left:60};
-    const innerW=width-margin.left-margin.right, innerH=height-margin.top-margin.bottom;
+    const maxVal = d3.max(series, s => d3.max(s.values, v => v.value)) || 1;
+    const colour = d3.scaleOrdinal().domain(themesTop)
+      .range(d3.schemeTableau10.concat(d3.schemeSet3).slice(0, Math.max(10, themesTop.length)));
+    const margin = { top: 30, right: 220, bottom: 40, left: 60 };
+    const innerW = width - margin.left - margin.right;
+    const innerH = height - margin.top  - margin.bottom;
 
-    const x=d3.scaleTime().domain([isoToJSDate(weeks[0]),DateTime.fromISO(weeks[weeks.length-1],{zone:"utc"}).plus({weeks:1}).toJSDate()]).range([0,innerW]);
-    const y=d3.scaleLinear().domain([0,maxVal]).nice().range([innerH,0]);
+    const x = d3.scaleTime()
+      .domain([isoToJSDate(weeks[0]), DateTime.fromISO(weeks[weeks.length - 1], { zone: "utc" }).plus({ weeks: 1 }).toJSDate()])
+      .range([0, innerW]);
+    const y = d3.scaleLinear().domain([0, maxVal]).nice().range([innerH, 0]);
 
-    const g=svgTT.append("g").attr("transform",`translate(${margin.left},${margin.top})`);
-    addGridAndAxes(g,x,y,innerW,innerH,d3.timeWeek.every(2),5);
-    addLinesAndDots(g,x,y,series,"value",d=>colour(d._key),(evt,d)=>{
-      const dt=DateTime.fromISO(d.weekISO,{zone:"utc"});
-      tooltip.innerHTML=`<strong>${escapeHtml(d._key)}</strong>\nWeek commencing: ${dt.toFormat("dd LLL yyyy")}\nWeekly severity: ${d.value.toFixed(0)}`;
-      tooltip.style.opacity="1"; tooltip.style.transform="translateY(0px)"; placeTooltip(evt);
+    const g = svgTT.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+    addGridAndAxes(g, x, y, innerW, innerH, d3.timeWeek.every(2), 5);
+    addLinesAndDots(g, x, y, series, "value", d => colour(d._key), (evt, d) => {
+      showWeekTooltip(evt, d._key, d.weekISO, d.value);
     });
-    addRightLegend(svgTT,"Keywords",themesTop,d=>colour(d),margin,innerW);
-    svgTT.append("text").attr("x",margin.left).attr("y",18).attr("fill","#aeb6c6").attr("font-size",12).text("Weekly severity by theme (top themes).");
+    addRightLegend(svgTT, "Keywords", themesTop, d => colour(d), margin, innerW);
+    svgTT.append("text").attr("x", margin.left).attr("y",18).attr("fill","#aeb6c6").attr("font-size",12)
+      .text("Weekly severity by theme (top themes).");
   }
 
   // ── Keyword overlaps ─────────────────────────────────────────────────────────
-  function drawKeywordOverlaps(tasks) {
-    const el   = $("keywordOverlapBody");
-    const meta = $("keywordMeta");
-    if (!el) return;
-    const windowDays = Math.max(0,Math.round(Number(elOverlapWindow&&elOverlapWindow.value?elOverlapWindow.value:14)));
 
-    if (!tasks||!tasks.length) {
-      el.innerHTML=`<div class="note">No tasks to analyse (check filters).</div>`;
-      drawKeywordOverlapTimeline([],windowDays);
-      if (meta) meta.innerHTML="";
+  function drawKeywordOverlaps(tasks) {
+    const el   = document.getElementById("keywordOverlapBody");
+    const meta = document.getElementById("keywordMeta");
+    if (!el) return;
+
+    const windowDays = Math.max(0, Math.round(Number(elOverlapWindow.value || 14)));
+
+    if (!tasks || !tasks.length) {
+      el.innerHTML = `<div class="note">No tasks to analyse (check filters).</div>`;
+      drawKeywordOverlapTimeline([], windowDays);
+      if (meta) meta.innerHTML = "";
       return;
     }
 
     // Group tasks by keyword
     const byKeyword = new Map();
     for (const t of tasks) {
-      for (const kw of (t.keywords||[])) {
-        const k=String(kw||"").trim(); if (!k) continue;
-        if (!byKeyword.has(k)) byKeyword.set(k,[]);
+      for (const kw of (t.keywords || [])) {
+        const k = String(kw || "").trim();
+        if (!k) continue;
+        if (!byKeyword.has(k)) byKeyword.set(k, []);
         byKeyword.get(k).push(t);
       }
     }
 
-    // Build clusters per keyword
-    const clusters=[];
-    for (const [kw,list] of byKeyword.entries()) {
-      const items=list.filter(t=>t.startISO&&t.finishISO).slice().sort((a,b)=>a.startISO.localeCompare(b.startISO));
-      if (items.length<2) continue;
-      let cur=null;
+    // Build temporal clusters per keyword (sliding-window merging)
+    const clusters = [];
+    for (const [kw, list] of byKeyword.entries()) {
+      const items = list
+        .filter(t => t.startISO && t.finishISO)
+        .slice()
+        .sort((a, b) => a.startISO.localeCompare(b.startISO));
+      if (items.length < 2) continue;
+
+      let cur = null;
       for (const t of items) {
-        const tS=DateTime.fromISO(t.startISO,{zone:"utc"}).startOf("day");
-        const tF=DateTime.fromISO(t.finishISO,{zone:"utc"}).startOf("day");
-        if (!tS.isValid||!tF.isValid) continue;
-        const tSx=tS.minus({days:windowDays}), tFx=tF.plus({days:windowDays});
-        if (!cur) { cur={keyword:kw,minStart:tS,maxFinish:tF,maxFinishExpanded:tFx,tasks:[t]}; continue; }
-        if (tSx<=cur.maxFinishExpanded) {
+        const tS = DateTime.fromISO(t.startISO,  { zone: "utc" }).startOf("day");
+        const tF = DateTime.fromISO(t.finishISO, { zone: "utc" }).startOf("day");
+        if (!tS.isValid || !tF.isValid) continue;
+        const tSx = tS.minus({ days: windowDays });
+        const tFx = tF.plus({ days: windowDays });
+
+        if (!cur) {
+          cur = { keyword: kw, minStart: tS, maxFinish: tF, maxFinishExpanded: tFx, tasks: [t] };
+          continue;
+        }
+        if (tSx <= cur.maxFinishExpanded) {
           cur.tasks.push(t);
-          if (tS<cur.minStart) cur.minStart=tS;
-          if (tF>cur.maxFinish) cur.maxFinish=tF;
-          if (tFx>cur.maxFinishExpanded) cur.maxFinishExpanded=tFx;
+          if (tS < cur.minStart)          cur.minStart = tS;
+          if (tF > cur.maxFinish)         cur.maxFinish = tF;
+          if (tFx > cur.maxFinishExpanded) cur.maxFinishExpanded = tFx;
         } else {
           clusters.push(cur);
-          cur={keyword:kw,minStart:tS,maxFinish:tF,maxFinishExpanded:tFx,tasks:[t]};
+          cur = { keyword: kw, minStart: tS, maxFinish: tF, maxFinishExpanded: tFx, tasks: [t] };
         }
       }
       if (cur) clusters.push(cur);
     }
 
-    // Summarise and filter to cross-programme overlaps
-    const rows = clusters.map(c=>{
-      const programmes=Array.from(new Set(c.tasks.map(t=>t.course||"—")));
-      const modules=Array.from(new Set(c.tasks.map(t=>t.moduleName).filter(Boolean)));
-      const items=c.tasks.map(t=>({
-        programme:t.course||"—",
-        date:`${t.startISO||"—"} → ${t.finishISO||"—"}`,
-        task:[t.moduleName,t.type].filter(Boolean).join(" · ")||"—",
-        students:(t.studentsBucket&&String(t.studentsBucket).trim())?String(t.studentsBucket).trim():"—",
-        keyword:c.keyword
-      })).sort((a,b)=>a.programme.localeCompare(b.programme,"en-GB",{numeric:true})||a.date.localeCompare(b.date));
-      return {
-        keyword:c.keyword, programmes, programmeCount:programmes.length,
-        taskCount:c.tasks.length, dateFrom:c.minStart.toISODate(), dateTo:c.maxFinish.toISODate(),
-        modules:modules.slice(0,10), items,
-        severity:c.tasks.reduce((acc,t)=>{
-          const s=DateTime.fromISO(t.startISO,{zone:"utc"}).startOf("day");
-          const f=DateTime.fromISO(t.finishISO,{zone:"utc"}).startOf("day");
-          const days=(s.isValid&&f.isValid)?Math.max(1,Math.floor(f.diff(s,"days").days)+1):1;
-          return acc+(t.severityPerDay||0)*days;
-        },0)
-      };
-    }).filter(r=>r.programmeCount>=2)
-      .sort((a,b)=>(b.programmeCount-a.programmeCount)||(b.taskCount-a.taskCount)||(b.severity-a.severity)||a.keyword.localeCompare(b.keyword,"en-GB"));
+    // Summarise clusters, keeping only cross-programme ones
+    const rows = clusters.map(c => {
+      const programmes = Array.from(new Set(c.tasks.map(t => t.course || "—")));
+      const modules    = Array.from(new Set(c.tasks.map(t => t.moduleName).filter(Boolean)));
+      const items      = c.tasks.map(t => ({
+        programme: t.course || "—",
+        date:      `${t.startISO || "—"} → ${t.finishISO || "—"}`,
+        task:      [t.moduleName, t.type].filter(Boolean).join(" · ") || "—",
+        students:  (t.studentsBucket && String(t.studentsBucket).trim()) ? String(t.studentsBucket).trim() : "—",
+        keyword:   c.keyword
+      })).sort((a, b) =>
+        a.programme.localeCompare(b.programme, "en-GB", { numeric: true }) ||
+        a.date.localeCompare(b.date)
+      );
 
-    const keywordsWithOverlaps=new Set(rows.map(r=>r.keyword));
-    if (meta) meta.innerHTML=
-      `<span class="pill"><strong>${rows.length}</strong> overlap clusters</span>`+
-      `<span class="pill"><strong>${keywordsWithOverlaps.size}</strong> keywords involved</span>`+
+      return {
+        keyword: c.keyword, programmes, programmeCount: programmes.length,
+        taskCount: c.tasks.length,
+        dateFrom: c.minStart.toISODate(), dateTo: c.maxFinish.toISODate(),
+        modules: modules.slice(0, 10), items,
+        severity: c.tasks.reduce((acc, t) => {
+          const s    = DateTime.fromISO(t.startISO,  { zone: "utc" }).startOf("day");
+          const f    = DateTime.fromISO(t.finishISO, { zone: "utc" }).startOf("day");
+          const days = (s.isValid && f.isValid) ? Math.max(1, Math.floor(f.diff(s, "days").days) + 1) : 1;
+          return acc + (t.severityPerDay || 0) * days;
+        }, 0)
+      };
+    }).filter(r => r.programmeCount >= 2)
+      .sort((a, b) =>
+        (b.programmeCount - a.programmeCount) ||
+        (b.taskCount - a.taskCount) ||
+        (b.severity - a.severity) ||
+        a.keyword.localeCompare(b.keyword, "en-GB")
+      );
+
+    const keywordsWithOverlaps = new Set(rows.map(r => r.keyword));
+    if (meta) meta.innerHTML =
+      `<span class="pill"><strong>${rows.length}</strong> overlap clusters</span>` +
+      `<span class="pill"><strong>${keywordsWithOverlaps.size}</strong> keywords involved</span>` +
       `<span class="pill">window: ±${windowDays} days</span>`;
 
     if (!rows.length) {
-      el.innerHTML=`<div class="note">No cross-programme keyword overlaps found (try widening the window, or check the keyword column).</div>`;
-      drawKeywordOverlapTimeline([],windowDays);
+      el.innerHTML = `<div class="note">No cross-programme keyword overlaps found (try widening the window, or check the keyword column).</div>`;
+      drawKeywordOverlapTimeline([], windowDays);
       return;
     }
 
-    const top=rows.slice(0,30);
-    el.innerHTML=`
+    const top = rows.slice(0, 30);
+    el.innerHTML = `
       <table class="stats-table">
-        <thead><tr><th>Keyword</th><th class="num">Programmes</th><th class="num">Tasks</th><th>Date span</th><th>Programmes involved</th><th>Example modules</th></tr></thead>
-        <tbody>${top.map(r=>`<tr>
+        <thead><tr>
+          <th>Keyword</th><th class="num">Programmes</th><th class="num">Tasks</th>
+          <th>Date span</th><th>Programmes involved</th><th>Example modules</th>
+        </tr></thead>
+        <tbody>${top.map(r => `<tr>
           <td>${escapeHtml(r.keyword)}</td>
           <td class="num">${r.programmeCount}</td>
           <td class="num">${r.taskCount}</td>
           <td style="color:#aeb6c6;">${escapeHtml(r.dateFrom)} → ${escapeHtml(r.dateTo)}</td>
-          <td>${escapeHtml(r.programmes.slice(0,6).join(", "))}${r.programmes.length>6?"…":""}</td>
-          <td style="color:#aeb6c6;">${escapeHtml(r.modules.join(", "))}${r.modules.length>=10?"…":""}</td>
+          <td>${escapeHtml(r.programmes.slice(0,6).join(", "))}${r.programmes.length > 6 ? "…" : ""}</td>
+          <td style="color:#aeb6c6;">${escapeHtml(r.modules.join(", "))}${r.modules.length >= 10 ? "…" : ""}</td>
         </tr>`).join("")}</tbody>
       </table>
       <div class="note">Showing the top ${top.length} clusters. Increase or decrease the window to change what counts as overlapping.</div>`;
@@ -1408,50 +2049,60 @@
   }
 
   function drawKeywordOverlapTimeline(rows, windowDays) {
-    const svgEl = $("keywordOverlapViz");
+    const svgEl = document.getElementById("keywordOverlapViz");
     if (!svgEl) return;
     while (svgEl.firstChild) svgEl.removeChild(svgEl.firstChild);
 
-    if (!rows||!rows.length) {
-      d3.select(svgEl).append("text").attr("x",18).attr("y",26).attr("fill","#aeb6c6").attr("font-size",12).text("No overlap clusters to plot.");
+    if (!rows || !rows.length) {
+      d3.select(svgEl).append("text").attr("x",18).attr("y",26)
+        .attr("fill","#aeb6c6").attr("font-size",12).text("No overlap clusters to plot.");
       return;
     }
 
-    const byKw = d3.rollups(rows, v=>({n:v.length, severity:d3.sum(v,d=>d.severity||0), programmesMax:d3.max(v,d=>d.programmeCount||0)}), d=>d.keyword)
-      .sort((a,b)=>(b[1].n-a[1].n)||(b[1].severity-a[1].severity)||String(a[0]).localeCompare(String(b[0]),"en-GB"));
+    const byKw = d3.rollups(
+      rows,
+      v => ({ n: v.length, severity: d3.sum(v, d => d.severity || 0), programmesMax: d3.max(v, d => d.programmeCount || 0) }),
+      d => d.keyword
+    ).sort((a, b) => (b[1].n - a[1].n) || (b[1].severity - a[1].severity) || String(a[0]).localeCompare(String(b[0]), "en-GB"));
 
-    const keepKeywords = new Set(byKw.slice(0,25).map(d=>d[0]));
-    const data = rows.filter(r=>keepKeywords.has(r.keyword)).map(r=>{
-      const s=DateTime.fromISO(r.dateFrom,{zone:"utc"});
-      const f=DateTime.fromISO(r.dateTo,{zone:"utc"});
-      const mid=s.isValid&&f.isValid?s.plus({days:Math.max(0,Math.floor(f.diff(s,"days").days)/2)}):s;
-      return {...r, midISO:mid.isValid?mid.toISODate():r.dateFrom, midDT:mid.isValid?mid.toJSDate():new Date(r.dateFrom)};
+    const keepKeywords = new Set(byKw.slice(0, 25).map(d => d[0]));
+    const data = rows.filter(r => keepKeywords.has(r.keyword)).map(r => {
+      const s   = DateTime.fromISO(r.dateFrom, { zone: "utc" });
+      const f   = DateTime.fromISO(r.dateTo,   { zone: "utc" });
+      const mid = (s.isValid && f.isValid)
+        ? s.plus({ days: Math.max(0, Math.floor(f.diff(s, "days").days) / 2) })
+        : s;
+      return { ...r, midISO: mid.isValid ? mid.toISODate() : r.dateFrom, midDT: mid.isValid ? mid.toJSDate() : new Date(r.dateFrom) };
     });
 
-    const keywords=Array.from(new Set(data.map(d=>d.keyword))).sort((a,b)=>a.localeCompare(b,"en-GB",{numeric:true}));
-    const rowH=18, hWanted=Math.max(220,keywords.length*rowH+70);
-    svgEl.setAttribute("height",String(hWanted));
+    const keywords = Array.from(new Set(data.map(d => d.keyword)))
+      .sort((a, b) => a.localeCompare(b, "en-GB", { numeric: true }));
 
-    const W=Number(svgEl.getAttribute("width")||1400);
-    const H=Number(svgEl.getAttribute("height")||520);
-    const margin={top:28,right:24,bottom:34,left:220};
-    const innerW=W-margin.left-margin.right, innerH=H-margin.top-margin.bottom;
+    const rowH    = 18;
+    const hWanted = Math.max(220, keywords.length * rowH + 70);
+    svgEl.setAttribute("height", String(hWanted));
 
-    const svg=d3.select(svgEl);
-    const minDate=d3.min(data,d=>d.midDT), maxDate=d3.max(data,d=>d.midDT);
-    const x=d3.scaleTime().domain([minDate,maxDate]).range([0,innerW]).nice();
-    const y=d3.scaleBand().domain(keywords).range([0,innerH]).paddingInner(0.2);
-    const r=d3.scaleSqrt().domain([2,d3.max(data,d=>d.programmeCount||2)||2]).range([3,12]);
-    const c=d3.scaleSequential().domain([2,d3.max(data,d=>d.programmeCount||2)||2]).interpolator(d3.interpolateTurbo);
+    const W = Number(svgEl.getAttribute("width")  || 1400);
+    const H = Number(svgEl.getAttribute("height") || 520);
+    const margin = { top: 28, right: 24, bottom: 34, left: 220 };
+    const innerW = W - margin.left - margin.right;
+    const innerH = H - margin.top  - margin.bottom;
 
-    const g=svg.append("g").attr("transform",`translate(${margin.left},${margin.top})`);
+    const svg = d3.select(svgEl);
+    const x   = d3.scaleTime().domain([d3.min(data, d => d.midDT), d3.max(data, d => d.midDT)]).range([0, innerW]).nice();
+    const y   = d3.scaleBand().domain(keywords).range([0, innerH]).paddingInner(0.2);
+    const r   = d3.scaleSqrt().domain([2, d3.max(data, d => d.programmeCount || 2) || 2]).range([3, 12]);
+    const c   = d3.scaleSequential().domain([2, d3.max(data, d => d.programmeCount || 2) || 2]).interpolator(d3.interpolateTurbo);
+
+    const g = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+
     g.selectAll("line.row").data(keywords).enter().append("line").attr("class","row")
-      .attr("x1",0).attr("x2",innerW)
-      .attr("y1",d=>y(d)+y.bandwidth()/2).attr("y2",d=>y(d)+y.bandwidth()/2)
+      .attr("x1",0).attr("x2", innerW)
+      .attr("y1", d => y(d) + y.bandwidth() / 2).attr("y2", d => y(d) + y.bandwidth() / 2)
       .attr("stroke","#232a36").attr("stroke-width",1);
 
-    const xAxisG=g.append("g").attr("transform",`translate(0,${innerH})`)
-      .call(d3.axisBottom(x).ticks(Math.min(10,Math.max(4,Math.floor(innerW/140)))).tickSizeOuter(0));
+    const xAxisG = g.append("g").attr("transform", `translate(0,${innerH})`)
+      .call(d3.axisBottom(x).ticks(Math.min(10, Math.max(4, Math.floor(innerW / 140)))).tickSizeOuter(0));
     angleXAxis(xAxisG);
     xAxisG.selectAll("text").attr("fill","#aeb6c6").attr("font-size",11);
     xAxisG.selectAll("path,line").attr("stroke","#2b3444");
@@ -1460,117 +2111,183 @@
       .selectAll("text").attr("fill","#aeb6c6").attr("font-size",11);
     g.select(".domain").attr("stroke","none");
 
-    // Tooltip for overlap timeline
-    const existing=$("kwTip");
-    const tip = existing ? d3.select(existing) : d3.select(document.body).append("div")
-      .attr("id","kwTip").attr("class","tooltip")
-      .style("position","fixed").style("max-width","560px").style("pointer-events","none")
-      .style("opacity",0).style("white-space","normal");
+    // Dedicated rich-HTML tooltip for the overlap timeline
+    const existing = document.getElementById("kwTip");
+    const tip = existing
+      ? d3.select(existing)
+      : d3.select(document.body).append("div")
+          .attr("id","kwTip").attr("class","tooltip")
+          .style("position","fixed").style("max-width","560px").style("pointer-events","none")
+          .style("opacity",0).style("white-space","normal");
 
-    function tipHtml(d) {
-      const progs=(d.programmes||[]).join(", ");
-      const mods=(d.modules||[]).join(", ");
-      const rows=(d.items||[]).map(it=>`<tr>
+    const buildTipHtml = d => {
+      const progs = (d.programmes || []).join(", ");
+      const mods  = (d.modules    || []).join(", ");
+      const taskRows = (d.items || []).map(it => `<tr>
         <td style="padding:2px 6px;line-height:1.25;vertical-align:top;white-space:nowrap;">${escapeHtml(it.programme)}</td>
         <td style="padding:2px 6px;line-height:1.25;vertical-align:top;white-space:nowrap;color:#cbd5e1;">${escapeHtml(it.date)}</td>
-        <td style="padding:2px 6px;line-height:1.25;vertical-align:top;white-space:nowrap;color:#cbd5e1;">${escapeHtml(it.students||"—")}</td>
+        <td style="padding:2px 6px;line-height:1.25;vertical-align:top;white-space:nowrap;color:#cbd5e1;">${escapeHtml(it.students || "—")}</td>
         <td style="padding:2px 6px;line-height:1.25;vertical-align:top;color:#cbd5e1;">${escapeHtml(it.task)}</td>
-        <td style="padding:2px 6px;line-height:1.25;vertical-align:top;color:#aeb6c6;">${escapeHtml(it.keyword||d.keyword||"")}</td>
+        <td style="padding:2px 6px;line-height:1.25;vertical-align:top;color:#aeb6c6;">${escapeHtml(it.keyword || d.keyword || "")}</td>
       </tr>`).join("");
-      const taskTable = rows ? `
-        <div style="margin-top:4px;font-size:12px;line-height:1.25;color:#aeb6c6;">Tasks in this overlap cluster</div>
-        <div style="margin-top:3px;max-height:220px;overflow:auto;border:1px solid rgba(255,255,255,.10);border-radius:10px;">
-          <table style="width:100%;border-collapse:collapse;font-size:12px;">
-            <thead><tr style="position:sticky;top:0;background:rgba(10,11,17,.92);backdrop-filter:blur(6px);">
-              <th style="text-align:left;padding:5px 6px;color:#f2f2f2;font-weight:650;border-bottom:1px solid rgba(255,255,255,.10);">Programme</th>
-              <th style="text-align:left;padding:5px 6px;color:#f2f2f2;font-weight:650;border-bottom:1px solid rgba(255,255,255,.10);">Date</th>
-              <th style="text-align:left;padding:5px 6px;color:#f2f2f2;font-weight:650;border-bottom:1px solid rgba(255,255,255,.10);">Level of B-made input expected</th>
-              <th style="text-align:left;padding:5px 6px;color:#f2f2f2;font-weight:650;border-bottom:1px solid rgba(255,255,255,.10);">Task</th>
-              <th style="text-align:left;padding:5px 6px;color:#f2f2f2;font-weight:650;border-bottom:1px solid rgba(255,255,255,.10);">Keyword</th>
-            </tr></thead>
-            <tbody>${rows}</tbody>
-          </table>
-        </div>` : "";
-      return `<div style="font-weight:700;margin-bottom:4px;">${escapeHtml(d.keyword)}</div>
+
+      return `
+        <div style="font-weight:700;margin-bottom:4px;">${escapeHtml(d.keyword)}</div>
         <div style="color:#cbd5e1;font-size:12px;">${escapeHtml(d.dateFrom)} → ${escapeHtml(d.dateTo)}</div>
         <div style="margin-top:2px;font-size:12px;line-height:1.25;"><strong>${d.programmeCount}</strong> programmes, <strong>${d.taskCount}</strong> tasks</div>
         <div style="margin-top:2px;font-size:12px;line-height:1.25;color:#aeb6c6;"><strong>Programmes:</strong> ${escapeHtml(progs)}</div>
-        ${mods?`<div style="margin-top:4px;font-size:12px;color:#aeb6c6;"><strong>Modules:</strong> ${escapeHtml(mods)}</div>`:""}
-        ${taskTable}
+        ${mods ? `<div style="margin-top:4px;font-size:12px;color:#aeb6c6;"><strong>Modules:</strong> ${escapeHtml(mods)}</div>` : ""}
+        ${taskRows ? `
+          <div style="margin-top:4px;font-size:12px;line-height:1.25;color:#aeb6c6;">Tasks in this overlap cluster</div>
+          <div style="margin-top:3px;max-height:220px;overflow:auto;border:1px solid rgba(255,255,255,.10);border-radius:10px;">
+            <table style="width:100%;border-collapse:collapse;font-size:12px;">
+              <thead><tr style="position:sticky;top:0;background:rgba(10,11,17,.92);backdrop-filter:blur(6px);">
+                <th style="text-align:left;padding:5px 6px;color:#f2f2f2;font-weight:650;border-bottom:1px solid rgba(255,255,255,.10);">Programme</th>
+                <th style="text-align:left;padding:5px 6px;color:#f2f2f2;font-weight:650;border-bottom:1px solid rgba(255,255,255,.10);">Date</th>
+                <th style="text-align:left;padding:5px 6px;color:#f2f2f2;font-weight:650;border-bottom:1px solid rgba(255,255,255,.10);">Level of B-made input expected</th>
+                <th style="text-align:left;padding:5px 6px;color:#f2f2f2;font-weight:650;border-bottom:1px solid rgba(255,255,255,.10);">Task</th>
+                <th style="text-align:left;padding:5px 6px;color:#f2f2f2;font-weight:650;border-bottom:1px solid rgba(255,255,255,.10);">Keyword</th>
+              </tr></thead>
+              <tbody>${taskRows}</tbody>
+            </table>
+          </div>` : ""}
         <div style="margin-top:2px;font-size:12px;line-height:1.25;color:#aeb6c6;">window: ±${windowDays} days</div>`;
-    }
+    };
 
     g.append("g").selectAll("circle.dot").data(data).enter().append("circle")
       .attr("class","dot")
-      .attr("cx",d=>x(d.midDT)).attr("cy",d=>y(d.keyword)+y.bandwidth()/2)
-      .attr("r",d=>r(d.programmeCount||2)).attr("fill",d=>c(d.programmeCount||2))
+      .attr("cx", d => x(d.midDT)).attr("cy", d => y(d.keyword) + y.bandwidth() / 2)
+      .attr("r", d => r(d.programmeCount || 2))
+      .attr("fill", d => c(d.programmeCount || 2))
       .attr("opacity",.9).attr("stroke","#0b0f15").attr("stroke-width",1)
-      .on("mousemove",(ev,d)=>{
-        tip.html(tipHtml(d)).style("opacity",1)
-          .style("left",`${Math.min(ev.clientX+14,window.innerWidth-360)}px`)
-          .style("top",`${Math.min(ev.clientY+14,window.innerHeight-220)}px`);
-      }).on("mouseleave",()=>tip.style("opacity",0));
+      .on("mousemove", (ev, d) => {
+        tip.html(buildTipHtml(d)).style("opacity",1)
+          .style("left", `${Math.min(ev.clientX + 14, window.innerWidth  - 360)}px`)
+          .style("top",  `${Math.min(ev.clientY + 14, window.innerHeight - 220)}px`);
+      })
+      .on("mouseleave", () => tip.style("opacity",0));
 
-    svg.append("text").attr("x",margin.left).attr("y",18).attr("fill","#aeb6c6").attr("font-size",12)
+    svg.append("text").attr("x", margin.left).attr("y",18).attr("fill","#aeb6c6").attr("font-size",12)
       .text("Overlap timeline (top 25 keywords by overlap activity).");
   }
 
   // ── Export helpers ───────────────────────────────────────────────────────────
+
+  /** Render an SVG element to a PNG and trigger a download. */
   async function exportSvgToPng(svgEl, fileName) {
-    const svg = svgEl.cloneNode(true);
-    const w = svgEl.getAttribute("width") || svgEl.clientWidth;
-    const h = svgEl.getAttribute("height") || svgEl.clientHeight;
-    svg.setAttribute("width",w); svg.setAttribute("height",h);
+    const svg    = svgEl.cloneNode(true);
+    const w      = svgEl.getAttribute("width")  || svgEl.clientWidth;
+    const h      = svgEl.getAttribute("height") || svgEl.clientHeight;
+    svg.setAttribute("width",  w);
+    svg.setAttribute("height", h);
     const xml    = new XMLSerializer().serializeToString(svg);
     const img    = new Image();
     img.src      = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(xml)));
     await img.decode();
     const canvas = document.createElement("canvas");
-    canvas.width=Number(w); canvas.height=Number(h);
-    const ctx = canvas.getContext("2d");
-    ctx.fillStyle="#0b0c10"; ctx.fillRect(0,0,canvas.width,canvas.height);
-    ctx.drawImage(img,0,0);
-    const a=document.createElement("a"); a.download=fileName; a.href=canvas.toDataURL("image/png"); a.click();
+    canvas.width = Number(w); canvas.height = Number(h);
+    const ctx    = canvas.getContext("2d");
+    ctx.fillStyle = "#0b0c10";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0);
+    const a = document.createElement("a");
+    a.download = fileName; a.href = canvas.toDataURL("image/png"); a.click();
   }
 
   // ── Event wiring ─────────────────────────────────────────────────────────────
+
   elFile.addEventListener("change", async evt => {
-    const files = Array.from(evt.target.files||[]);
+    const files = Array.from(evt.target.files || []);
     if (!files.length) return;
-    setEnabled(false); setStatus("Loading…");
+    setEnabled(false);
+    setStatus("Loading…");
     try {
       allTasks = [];
-      let invalidCount=0, sheetCount=0;
+      let invalidCount = 0, sheetCount = 0;
       for (const f of files) {
-        const wb = XLSX.read(await f.arrayBuffer(), {type:"array", cellDates:true});
+        const wb = XLSX.read(await f.arrayBuffer(), { type: "array", cellDates: true });
         sheetCount += wb.SheetNames.length;
         const tasks = parseWorkbookToTasks(wb, f.name);
-        invalidCount += tasks.filter(t=>!t.valid).length;
+        invalidCount += tasks.filter(t => !t.valid).length;
         allTasks.push(...tasks);
       }
-      const validCount = allTasks.filter(t=>t.valid).length;
-      const courses    = uniqueSorted(allTasks.filter(t=>t.valid).map(t=>t.course));
+      const validCount = allTasks.filter(t => t.valid).length;
+      const courses    = uniqueSorted(allTasks.filter(t => t.valid).map(t => t.course));
       refreshFilterOptions();
       setEnabled(true);
-      setStatus(`Loaded files: ${files.length}\nSheets scanned: ${sheetCount}\nCourses detected (by sheet name): ${courses.length}\nValid tasks: ${validCount}\nRows needing attention (missing required cells): ${invalidCount}`);
+      setStatus(
+        `Loaded files: ${files.length}\n` +
+        `Sheets scanned: ${sheetCount}\n` +
+        `Courses detected (by sheet name): ${courses.length}\n` +
+        `Valid tasks: ${validCount}\n` +
+        `Rows needing attention (missing required cells): ${invalidCount}`
+      );
       applyFilters();
-    } catch(err) {
+    } catch (err) {
       console.error(err);
-      setStatus(`Error while loading:\n${err&&err.message?err.message:String(err)}`);
+      setStatus(`Error while loading:\n${err?.message ?? String(err)}`);
       setEnabled(false);
     }
   });
 
-  elApply.addEventListener("click", ()=>applyFilters());
-  elReset.addEventListener("click", ()=>resetFilters());
-  elSearchBox.addEventListener("input", ()=>applyFilters());
-  elSeverityMode.addEventListener("change", ()=>applyFilters());
+  elClosureFile.addEventListener("change", async evt => {
+    const file = (evt.target.files || [])[0];
+    if (!file) {
+      closureEntries = [];
+      elClosureStatus.textContent = "No closure file loaded.";
+      applyFilters();
+      return;
+    }
+    elClosureStatus.textContent = "Loading closure file…";
+    try {
+      const wb = XLSX.read(await file.arrayBuffer(), { type: "array", cellDates: true });
+      closureEntries = parseClosureWorkbook(wb, file.name);
+      elClosureStatus.textContent =
+        `Loaded closure file: ${file.name}\n` +
+        `Sheets scanned: ${wb.SheetNames.length}\n` +
+        `Closure rows detected: ${closureEntries.length}\n` +
+        `All Sites expands to Gordon Street, Here East, Wicklow Street, and Marshgate.`;
+      applyFilters();
+    } catch (err) {
+      console.error(err);
+      closureEntries = [];
+      elClosureStatus.textContent = `Error while loading closure file:\n${err?.message ?? String(err)}`;
+      applyFilters();
+    }
+  });
 
-  elLikemin.addEventListener("change", ()=>{ if (Number(elLikemin.value)>Number(elLikemax.value)) elLikemax.value=elLikemin.value; });
-  elLikemax.addEventListener("change", ()=>{ if (Number(elLikemax.value)<Number(elLikemin.value)) elLikemin.value=elLikemax.value; });
+  elApply.addEventListener("click",          () => applyFilters());
+  elReset.addEventListener("click",          () => resetFilters());
+  elSearchBox.addEventListener("input",      () => applyFilters());
+  elSeverityMode.addEventListener("change",  () => applyFilters());
+  elShowModuleDuration.addEventListener("change", () => applyFilters());
+  elShowClosures.addEventListener("change",       () => applyFilters());
+  elUseEcAsEnd.addEventListener("change",    () => applyFilters());
+  elUseTaskWindow.addEventListener("change", () => applyFilters());
 
-  elExportGantt.addEventListener("click", ()=>exportSvgToPng($("gantt"),"gantt.png"));
-  elExportHeat.addEventListener("click",  ()=>exportSvgToPng($("heat"),"severity.png"));
+  // Window-days inputs: clamp negatives and re-apply only when the window is active
+  [elWindowBeforeDeadlineDays, elWindowAfterDeadlineDays, elWindowBeforeCritDays, elWindowAfterCritDays]
+    .forEach(el => el.addEventListener("input", () => {
+      if (Number(el.value || 0) < 0) el.value = "0";
+      if (elUseTaskWindow.checked) applyFilters();
+    }));
+
+  // Window-rule checkboxes: re-apply only when the master toggle is on
+  [elWindowBeforeDeadline, elWindowAfterDeadline, elWindowBeforeCrit, elWindowAfterCrit]
+    .forEach(el => el.addEventListener("change", () => {
+      if (elUseTaskWindow.checked) applyFilters();
+    }));
+
+  // Keep likelihood min ≤ max
+  elLikemin.addEventListener("change", () => {
+    if (Number(elLikemin.value) > Number(elLikemax.value)) elLikemax.value = elLikemin.value;
+  });
+  elLikemax.addEventListener("change", () => {
+    if (Number(elLikemax.value) < Number(elLikemin.value)) elLikemin.value = elLikemax.value;
+  });
+
+  elExportGantt.addEventListener("click", () => exportSvgToPng($("gantt"),   "gantt.png"));
+  elExportHeat.addEventListener("click",  () => exportSvgToPng($("heat"),    "severity.png"));
 
 })();
 </script>
