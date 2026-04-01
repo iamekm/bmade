@@ -4,7 +4,6 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>B made planning: Gantt + severity</title>
-  
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/luxon/3.5.0/luxon.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
@@ -148,7 +147,9 @@
 <body>
 <header>
   <h1>B-made planning dashboard</h1>
-  <a class="btnTemplate" href="./Template.xlsx" download="bmade-template.xlsx">Download template</a>
+  <a class="btnTemplate" href="./Template.xlsx" download="bmade-template.xlsx">Download Timetable Template</a>
+  <p class="headSub">Load Excel sheets to visualise workload, overlaps, and severity.</p>
+  <a class="btnTemplate" href="./Template-Closure-Dates.xlsx" download="bmade-template.xlsx">Download Closure Template</a>
   <p class="headSub">Load Excel sheets to visualise workload, overlaps, and severity.</p>
 </header>
 
@@ -1662,8 +1663,14 @@
     svgS.attr("width", width).attr("height", height);
     if (!tasks || !tasks.length) return;
 
-    const types  = uniqueSorted(tasks.map(t => t.type));
-    const weeks  = buildWeeks(d3.min(tasks, d => d.startISO), d3.max(tasks, d => d.finishISO));
+    const showModuleDuration = elShowModuleDuration.checked;
+    const stackTasks = showModuleDuration
+      ? tasks
+      : tasks.filter(t => canonicalTaskType(t.type) !== "module duration");
+    if (!stackTasks.length) return;
+
+    const types  = uniqueSorted(stackTasks.map(t => t.type));
+    const weeks  = buildWeeks(d3.min(stackTasks, d => d.startISO), d3.max(stackTasks, d => d.finishISO));
 
     // Initialise one row per week with all type counts at 0
     const weekMap = new Map(weeks.map(w => [
@@ -1671,7 +1678,7 @@
       { weekISO: w, date: isoToJSDate(w), ...Object.fromEntries(types.map(ty => [ty, 0])) }
     ]));
 
-    for (const t of tasks) {
+    for (const t of stackTasks) {
       const s = DateTime.fromISO(t.startISO,  { zone: "utc" }).startOf("day");
       const f = DateTime.fromISO(t.finishISO, { zone: "utc" }).startOf("day");
       if (!s.isValid || !f.isValid) continue;
@@ -1712,7 +1719,10 @@
         const total = types.reduce((a, k) => a + (d[k] || 0), 0);
         const top   = [...types].sort((a, b) => (d[b] || 0) - (d[a] || 0)).slice(0, 6);
         showTooltipRaw(evt,
-          `<strong>All programmes</strong>\nWeek commencing: ${dt.toFormat("dd LLL yyyy")}\nTotal severity: ${total.toFixed(0)}\n` +
+          `<strong>All programmes</strong>
+Week commencing: ${dt.toFormat("dd LLL yyyy")}
+Total severity: ${total.toFixed(0)}
+` +
           top.map(k => `${k}: ${(d[k] || 0).toFixed(0)}`).join("\n"),
           380, 260
         );
@@ -1720,7 +1730,11 @@
 
     addRightLegend(svgS, "Task type", types, d => colour(d), margin, innerW);
     svgS.append("text").attr("x", margin.left).attr("y",16).attr("fill","#aeb6c6").attr("font-size",12)
-      .text("Weekly severity by task type (stacked).");
+      .text(
+        showModuleDuration
+          ? "Weekly severity by task type (stacked)."
+          : "Weekly severity by task type (stacked, Module Duration hidden)."
+      );
   }
 
   // ── Location curves ──────────────────────────────────────────────────────────
