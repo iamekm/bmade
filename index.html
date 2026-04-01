@@ -141,6 +141,28 @@
   .stats-kpi .box .big { font-size:16px; font-weight:750; color:#f2f2f2; margin-bottom:4px; }
 
   .courseHeader { pointer-events:none; }
+
+
+  details.chartSection {
+    border:1px solid var(--grid); border-radius:12px; background:#0a0b11;
+    padding:0; overflow:hidden; margin-top:14px;
+  }
+  details.chartSection[open] { box-shadow: inset 0 0 0 1px rgba(255,255,255,.02); }
+  summary.chartSummary {
+    list-style:none; cursor:pointer; padding:12px 14px; user-select:none;
+    display:flex; align-items:center; justify-content:space-between;
+    gap:12px; font-size:14px; font-weight:650; color:#f1f1f1;
+    background:#0d0f16; border-bottom:1px solid var(--grid);
+  }
+  summary.chartSummary::-webkit-details-marker { display:none; }
+  summary.chartSummary::after {
+    content:"▾"; color:var(--muted); font-size:14px; line-height:1; flex:0 0 auto;
+    transform:rotate(-90deg); transition:transform 140ms ease;
+  }
+  details.chartSection[open] > summary.chartSummary::after { transform:rotate(0deg); }
+  .chartSectionBody { padding:12px; }
+  .chartSectionBody .svgwrap:first-child, .chartSectionBody .toolbar + .svgwrap { margin-top:0; }
+
 </style>
 </head>
 
@@ -149,7 +171,7 @@
   <h1>B-made planning dashboard</h1>
   <a class="btnTemplate" href="./Template.xlsx" download="bmade-template.xlsx">Download Timetable Template</a>
   <p class="headSub">Load Excel sheets to visualise workload, overlaps, and severity.</p>
-  <a class="btnTemplate" href="./Template-Closure-Dates.xlsx" download="bmade-template.xlsx">Download Closure Template</a>
+  <a class="btnTemplate" href="./Closure_Template.xlsx" download="bmade-template.xlsx">Download Closure Template</a>
   <p class="headSub">Load Excel sheets to visualise workload, overlaps, and severity.</p>
 </header>
 
@@ -325,55 +347,95 @@
 
   <div class="vizgrid">
     <div class="card viz">
-      <h2>Gantt chart</h2>
-      <div class="toolbar" id="ganttMeta"></div>
-      <div class="svgwrap"><svg id="gantt" width="1400" height="620"></svg></div>
-      <div class="note">Tip: scroll horizontally for longer timelines. Hover tasks for details.</div>
+      <details class="chartSection" open>
+        <summary class="chartSummary">Gantt chart</summary>
+        <div class="chartSectionBody">
+          <div class="toolbar" id="ganttMeta"></div>
+          <div class="svgwrap"><svg id="gantt" width="1400" height="620"></svg></div>
+          <div class="note">Tip: scroll horizontally for longer timelines. Hover tasks for details.</div>
+        </div>
+      </details>
     </div>
 
     <div class="card viz">
-      <h2>Severity line graph (weekly)</h2>
-      <div class="toolbar" id="heatMeta"></div>
-      <div class="svgwrap"><svg id="heat" width="1400" height="520"></svg></div>
-      <div class="note">Line graph shows weekly total severity per course (sheet).</div>
+      <details class="chartSection" open>
+        <summary class="chartSummary">Severity line graph (weekly)</summary>
+        <div class="chartSectionBody">
+          <div class="toolbar" id="heatMeta"></div>
+          <div class="svgwrap"><svg id="heat" width="1400" height="520"></svg></div>
+          <div class="note">Line graph shows weekly total severity per course (sheet).</div>
+        </div>
+      </details>
 
-      <h2 style="margin-top:14px;">Severity heat map (weekly blocks)</h2>
-      <div class="svgwrap"><svg id="heatBlocks" width="1400" height="360"></svg></div>
-      <div class="note">Blocks show weekly severity totals (darker = busier). Scroll to see all courses or weeks.</div>
+      <details class="chartSection" open>
+        <summary class="chartSummary">Severity heat map (weekly blocks)</summary>
+        <div class="chartSectionBody">
+          <div class="svgwrap"><svg id="heatBlocks" width="1400" height="360"></svg></div>
+          <div class="note">Blocks show weekly severity totals (darker = busier). Scroll to see all courses or weeks.</div>
+        </div>
+      </details>
 
-      <h2 style="margin-top:14px;">Total severity curve (all programmes)</h2>
-      <div class="svgwrap"><svg id="totalCurve" width="1400" height="260"></svg></div>
-      <div class="note">Single curve that sums weekly severity across all programmes, using the current filters.</div>
+      <details class="chartSection" open>
+        <summary class="chartSummary">Total severity curve (all programmes)</summary>
+        <div class="chartSectionBody">
+          <div class="svgwrap"><svg id="totalCurve" width="1400" height="260"></svg></div>
+          <div class="note">Single curve that sums weekly severity across all programmes, using the current filters.</div>
+        </div>
+      </details>
 
-      <h2 style="margin-top:14px;">Weekly severity by task type (stacked)</h2>
-      <div class="svgwrap"><svg id="typeStack" width="1400" height="360"></svg></div>
-      <div class="note">Stacked chart shows weekly severity split by task type (all programmes combined).</div>
+      <details class="chartSection" open>
+        <summary class="chartSummary">Weekly severity by task type (stacked)</summary>
+        <div class="chartSectionBody">
+          <div class="svgwrap"><svg id="typeStack" width="1400" height="360"></svg></div>
+          <div class="note">Stacked chart shows weekly severity split by task type (all programmes combined).</div>
+        </div>
+      </details>
 
-      <h2 style="margin-top:14px;">Severity curves by location</h2>
-      <div class="svgwrap"><svg id="locationCurves" width="1400" height="360"></svg></div>
-      <div class="note">Weekly severity summed by location (top locations shown; remainder grouped as Other).</div>
+      <details class="chartSection" open>
+        <summary class="chartSummary">Severity curves by location</summary>
+        <div class="chartSectionBody">
+          <div class="svgwrap"><svg id="locationCurves" width="1400" height="360"></svg></div>
+          <div class="note">Weekly severity summed by location (top locations shown; remainder grouped as Other).</div>
+        </div>
+      </details>
 
-      <h2 style="margin-top:14px;">Keywords</h2>
-      <div class="svgwrap"><svg id="themeBars" width="1400" height="320"></svg></div>
-      <div class="note">Top themes ranked by total severity (severity per day × task days). If a task has multiple themes, its severity contributes to each theme.</div>
+      <details class="chartSection" open>
+        <summary class="chartSummary">Keywords</summary>
+        <div class="chartSectionBody">
+          <div class="svgwrap"><svg id="themeBars" width="1400" height="320"></svg></div>
+          <div class="note">Top themes ranked by total severity (severity per day × task days). If a task has multiple themes, its severity contributes to each theme.</div>
+        </div>
+      </details>
 
-      <h2 style="margin-top:14px;">Theme trends (weekly)</h2>
-      <div class="svgwrap"><svg id="themeTrends" width="1400" height="360"></svg></div>
-      <div class="note">Weekly severity curves for the busiest themes (top themes by total severity).</div>
+      <details class="chartSection" open>
+        <summary class="chartSummary">Theme trends (weekly)</summary>
+        <div class="chartSectionBody">
+          <div class="svgwrap"><svg id="themeTrends" width="1400" height="360"></svg></div>
+          <div class="note">Weekly severity curves for the busiest themes (top themes by total severity).</div>
+        </div>
+      </details>
 
-      <h2 style="margin-top:14px;">Keyword overlaps</h2>
-      <div class="toolbar" id="keywordMeta"></div>
-      <div id="keywordOverlapBody" class="stats-wrap"></div>
-      <div class="svgwrap" style="margin-top:10px;"><svg id="keywordOverlapViz" width="1400" height="520"></svg></div>
-      <div class="note">Timeline view: each dot is an overlap cluster (same keyword across ≥2 programmes). Dot size indicates number of programmes; hover for details.</div>
-      <div class="note">Shows clusters where two or more programmes share the same keyword within the chosen time window.</div>
+      <details class="chartSection" open>
+        <summary class="chartSummary">Keyword overlaps</summary>
+        <div class="chartSectionBody">
+          <div class="toolbar" id="keywordMeta"></div>
+          <div id="keywordOverlapBody" class="stats-wrap"></div>
+          <div class="svgwrap" style="margin-top:10px;"><svg id="keywordOverlapViz" width="1400" height="520"></svg></div>
+          <div class="note">Timeline view: each dot is an overlap cluster (same keyword across ≥2 programmes). Dot size indicates number of programmes; hover for details.</div>
+          <div class="note">Shows clusters where two or more programmes share the same keyword within the chosen time window.</div>
+        </div>
+      </details>
     </div>
 
     <div class="card viz">
-      <h2>Heaviest users by course</h2>
-      <div class="toolbar" id="statsMeta"></div>
-      <div id="courseStatsBody" class="stats-wrap"></div>
-      <div class="note">Totals reflect the current filters. Total severity sums (likelihood × student weight) for every day in each activity range.</div>
+      <details class="chartSection" open>
+        <summary class="chartSummary">Heaviest users by course</summary>
+        <div class="chartSectionBody">
+          <div class="toolbar" id="statsMeta"></div>
+          <div id="courseStatsBody" class="stats-wrap"></div>
+          <div class="note">Totals reflect the current filters. Total severity sums (likelihood × student weight) for every day in each activity range.</div>
+        </div>
+      </details>
     </div>
   </div>
 </div>
@@ -1125,6 +1187,10 @@
       return true;
     });
 
+    if (!elShowModuleDuration.checked) {
+      filteredTasks = filteredTasks.filter(t => canonicalTaskType(t.type) !== "module duration");
+    }
+
     drawAll();
   }
 
@@ -1663,10 +1729,7 @@
     svgS.attr("width", width).attr("height", height);
     if (!tasks || !tasks.length) return;
 
-    const showModuleDuration = elShowModuleDuration.checked;
-    const stackTasks = showModuleDuration
-      ? tasks
-      : tasks.filter(t => canonicalTaskType(t.type) !== "module duration");
+    const stackTasks = tasks;
     if (!stackTasks.length) return;
 
     const types  = uniqueSorted(stackTasks.map(t => t.type));
@@ -1730,11 +1793,7 @@ Total severity: ${total.toFixed(0)}
 
     addRightLegend(svgS, "Task type", types, d => colour(d), margin, innerW);
     svgS.append("text").attr("x", margin.left).attr("y",16).attr("fill","#aeb6c6").attr("font-size",12)
-      .text(
-        showModuleDuration
-          ? "Weekly severity by task type (stacked)."
-          : "Weekly severity by task type (stacked, Module Duration hidden)."
-      );
+      .text("Weekly severity by task type (stacked).");
   }
 
   // ── Location curves ──────────────────────────────────────────────────────────
